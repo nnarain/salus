@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: health_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - health-tracker-network
+
+  devcontainer:
+    image: node:20
+    command: sleep infinity
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace:cached
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    networks:
+      - health-tracker-network
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: health_tracker
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+
+networks:
+  health-tracker-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
