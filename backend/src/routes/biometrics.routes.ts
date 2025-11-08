@@ -5,12 +5,13 @@ import {
   updateBiometric,
   deleteBiometric,
 } from '../controllers/biometrics.controller';
+import { standardLimiter, createLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.get('/', getBiometrics);
-router.post('/', createBiometric);
-router.put('/:id', updateBiometric);
-router.delete('/:id', deleteBiometric);
+router.get('/', standardLimiter, getBiometrics);
+router.post('/', createLimiter, createBiometric);
+router.put('/:id', createLimiter, updateBiometric);
+router.delete('/:id', standardLimiter, deleteBiometric);
 
 export default router;

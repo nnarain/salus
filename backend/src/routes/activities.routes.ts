@@ -5,12 +5,13 @@ import {
   updateActivity,
   deleteActivity,
 } from '../controllers/activities.controller';
+import { standardLimiter, createLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.get('/', getActivities);
-router.post('/', createActivity);
-router.put('/:id', updateActivity);
-router.delete('/:id', deleteActivity);
+router.get('/', standardLimiter, getActivities);
+router.post('/', createLimiter, createActivity);
+router.put('/:id', createLimiter, updateActivity);
+router.delete('/:id', standardLimiter, deleteActivity);
 
 export default router;

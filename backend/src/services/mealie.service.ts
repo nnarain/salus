@@ -32,6 +32,11 @@ export class MealieService {
 
   async getRecipe(recipeId: string) {
     try {
+      // Validate recipeId to prevent request forgery
+      if (!recipeId || typeof recipeId !== 'string' || recipeId.includes('/') || recipeId.includes('..')) {
+        throw new Error('Invalid recipe ID');
+      }
+
       const response = await axios.get(`${this.baseUrl}/api/recipes/${recipeId}`, {
         headers: {
           Authorization: `Bearer ${this.apiToken}`,

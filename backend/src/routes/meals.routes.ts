@@ -6,13 +6,14 @@ import {
   deleteMeal,
   getCalorieStats,
 } from '../controllers/meals.controller';
+import { standardLimiter, createLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.get('/', getMeals);
-router.post('/', createMeal);
-router.put('/:id', updateMeal);
-router.delete('/:id', deleteMeal);
-router.get('/stats', getCalorieStats);
+router.get('/stats', standardLimiter, getCalorieStats);
+router.get('/', standardLimiter, getMeals);
+router.post('/', createLimiter, createMeal);
+router.put('/:id', createLimiter, updateMeal);
+router.delete('/:id', standardLimiter, deleteMeal);
 
 export default router;

@@ -17,6 +17,12 @@ export const getRecipes = async (req: Request, res: Response) => {
 export const getRecipe = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    
+    // Validate the recipe ID
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid recipe ID is required' });
+    }
+    
     const recipe = await mealieService.getRecipe(id);
     res.json(recipe);
   } catch (error) {
