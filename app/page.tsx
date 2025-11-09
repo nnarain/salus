@@ -61,41 +61,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Technology Stack Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
-            <div className="text-3xl mb-3">⚡</div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Next.js 15</h3>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Latest React framework with App Router
-            </p>
-          </div>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
-            <div className="text-3xl mb-3">🗄️</div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Supabase</h3>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Open source Firebase alternative
-            </p>
-          </div>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
-            <div className="text-3xl mb-3">🎨</div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Tailwind CSS</h3>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Utility-first CSS framework
-            </p>
-          </div>
-          
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
-            <div className="text-3xl mb-3">📊</div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Recharts</h3>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Composable charting library
-            </p>
-          </div>
-        </div>
-
         {/* Action Buttons for Forms */}
         <div className="flex flex-wrap gap-4 justify-center mb-12">
           <button
