@@ -1,6 +1,7 @@
 "use client";
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import BiometricForm from '@/components/BiometricForm';
 
 // Sample data for the chart
 const sampleHealthData = [
@@ -60,6 +61,11 @@ export default function Home() {
               Composable charting library
             </p>
           </div>
+        </div>
+
+        {/* Biometric Data Entry Form */}
+        <div className="mb-12">
+          <BiometricForm />
         </div>
 
         {/* Sample Chart */}
