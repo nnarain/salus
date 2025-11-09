@@ -16,3 +16,16 @@ export interface WeightEntry extends Omit<BiometricEntry, 'metric_type' | 'unit'
   metric_type: 'weight';
   unit: 'kg' | 'lbs';
 }
+
+// Type definitions for activity data
+
+export interface ActivityEntry {
+  id?: string;
+  created_at?: string;
+  date: string; // ISO date string (YYYY-MM-DD)
+  activity_name: string;
+  activity_type: 'strength' | 'cardio';
+  effort_level: number; // 1-10 scale
+  duration_minutes?: number;
+  notes?: string;
+}

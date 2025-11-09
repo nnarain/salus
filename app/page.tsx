@@ -2,6 +2,7 @@
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricForm from '@/components/BiometricForm';
+import ActivityForm from '@/components/ActivityForm';
 
 // Sample data for the chart
 const sampleHealthData = [
@@ -66,6 +67,11 @@ export default function Home() {
         {/* Biometric Data Entry Form */}
         <div className="mb-12">
           <BiometricForm />
+        </div>
+
+        {/* Activity Entry Form */}
+        <div className="mb-12">
+          <ActivityForm />
         </div>
 
         {/* Sample Chart */}
