@@ -29,3 +29,13 @@ export interface ActivityEntry {
   duration_minutes?: number;
   notes?: string;
 }
+
+// Type definitions for stress data
+
+export interface StressEntry {
+  id?: string;
+  created_at?: string;
+  date: string; // ISO date string (YYYY-MM-DD)
+  stress_level: number; // 1-10 scale (1=very low, 10=very high)
+  notes?: string;
+}
