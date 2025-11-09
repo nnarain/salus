@@ -176,6 +176,9 @@ export default function Home() {
           title="User Settings"
         >
           <UserProfileForm onSuccess={() => setIsProfileModalOpen(false)} />
+        </Modal>
+
+        <Modal
           isOpen={isStressModalOpen}
           onClose={() => setIsStressModalOpen(false)}
           title="Add Stress Level"
