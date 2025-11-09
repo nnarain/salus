@@ -29,3 +29,15 @@ export interface ActivityEntry {
   duration_minutes?: number;
   notes?: string;
 }
+
+// Type definitions for user profile data
+
+export interface UserProfile {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+  height?: number;
+  height_unit?: 'cm' | 'inches' | 'feet';
+  age?: number;
+  notes?: string;
+}
