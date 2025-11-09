@@ -30,10 +30,11 @@ cd health-tracker
 npm install
 ```
 
-3. (Optional) Configure Supabase:
+3. Configure Supabase:
    - Copy `.env.local.example` to `.env.local`
    - Add your Supabase project URL and anon key
    - You can get these from your Supabase project settings at https://app.supabase.com
+   - Run the database migrations from `supabase/migrations/` in your Supabase SQL editor
 
 ```bash
 cp .env.local.example .env.local
@@ -68,23 +69,41 @@ npm start
 ```
 health-tracker/
 ├── app/                  # Next.js app directory
+│   ├── api/             # API routes
+│   │   └── biometrics/  # Biometric data endpoints
 │   ├── layout.tsx       # Root layout component
 │   ├── page.tsx         # Home page
 │   └── globals.css      # Global styles
+├── components/          # React components
+│   └── BiometricForm.tsx # Form for adding biometric data
 ├── lib/                 # Utility functions and configurations
-│   └── supabase.ts      # Supabase client setup
+│   ├── supabase.ts      # Supabase client setup
+│   └── types.ts         # TypeScript type definitions
+├── supabase/            # Database migrations and schema
+│   ├── migrations/      # SQL migration files
+│   └── README.md        # Database documentation
 ├── public/              # Static assets
 ├── .env.local.example   # Environment variables template
 └── package.json         # Project dependencies
 ```
 
-## Features (Coming Soon)
+## Features
 
-- User authentication
-- Health metrics tracking
-- Data visualization with charts
-- Data persistence with Supabase
-- Responsive design
+- ✅ **Biometric Data Entry**: Add weight and waistline measurements with date and optional notes
+- ✅ **Data Persistence**: Store biometric data in Supabase database
+- ✅ **Extensible Design**: Database schema designed to support multiple types of health metrics
+- ✅ **Responsive UI**: Beautiful, accessible form with Tailwind CSS
+- ✅ **Data Visualization**: Sample charts with Recharts library
+- 🚧 **User Authentication**: Coming soon
+- 🚧 **Historical Data Charts**: Visualize your biometric data over time
+
+### Biometric Data
+
+The app currently supports tracking:
+- **Weight**: Record your weight in kg or lbs
+- **Waistline**: Track waist measurements in cm or inches
+
+The database schema is extensible, making it easy to add more biometric types in the future.
 
 ## Development
 
