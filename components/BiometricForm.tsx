@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import type { BiometricEntry } from '@/lib/types';
 
-export default function BiometricForm() {
+interface BiometricFormProps {
+  onSuccess?: () => void;
+}
+
+export default function BiometricForm({ onSuccess }: BiometricFormProps = {}) {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
     metric_type: 'weight',
@@ -50,6 +54,11 @@ export default function BiometricForm() {
         value: '',
         notes: '',
       });
+
+      // Call onSuccess callback if provided (e.g., to close modal)
+      if (onSuccess) {
+        setTimeout(() => onSuccess(), 1000); // Small delay to show success message
+      }
     } catch (error) {
       setMessage({
         type: 'error',
@@ -69,11 +78,7 @@ export default function BiometricForm() {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-        Add Biometric Data
-      </h2>
-
+    <div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Date Input */}
         <div>

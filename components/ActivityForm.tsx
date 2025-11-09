@@ -28,7 +28,11 @@ const ACTIVITY_OPTIONS = {
   ],
 };
 
-export default function ActivityForm() {
+interface ActivityFormProps {
+  onSuccess?: () => void;
+}
+
+export default function ActivityForm({ onSuccess }: ActivityFormProps = {}) {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
     activity_type: 'cardio' as 'strength' | 'cardio',
@@ -79,6 +83,11 @@ export default function ActivityForm() {
         duration_minutes: '',
         notes: '',
       });
+
+      // Call onSuccess callback if provided (e.g., to close modal)
+      if (onSuccess) {
+        setTimeout(() => onSuccess(), 1000); // Small delay to show success message
+      }
     } catch (error) {
       setMessage({
         type: 'error',
@@ -100,11 +109,7 @@ export default function ActivityForm() {
   const currentActivityOptions = ACTIVITY_OPTIONS[formData.activity_type];
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-        Add Activity
-      </h2>
-
+    <div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Date Input */}
         <div>

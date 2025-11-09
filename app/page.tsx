@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
+import Modal from '@/components/Modal';
 
 // Sample data for the chart
 const sampleHealthData = [
@@ -16,6 +18,9 @@ const sampleHealthData = [
 ];
 
 export default function Home() {
+  const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <main className="container mx-auto px-4 py-16">
@@ -64,15 +69,61 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Biometric Data Entry Form */}
-        <div className="mb-12">
-          <BiometricForm />
+        {/* Action Buttons for Forms */}
+        <div className="flex flex-wrap gap-4 justify-center mb-12">
+          <button
+            onClick={() => setIsBiometricModalOpen(true)}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 rounded-lg shadow-lg transition-all hover:shadow-xl flex items-center gap-3"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+            </svg>
+            Add Biometric Data
+          </button>
+
+          <button
+            onClick={() => setIsActivityModalOpen(true)}
+            className="bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-8 rounded-lg shadow-lg transition-all hover:shadow-xl flex items-center gap-3"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+            Add Activity
+          </button>
         </div>
 
-        {/* Activity Entry Form */}
-        <div className="mb-12">
-          <ActivityForm />
-        </div>
+        {/* Modals */}
+        <Modal
+          isOpen={isBiometricModalOpen}
+          onClose={() => setIsBiometricModalOpen(false)}
+          title="Add Biometric Data"
+        >
+          <BiometricForm onSuccess={() => setIsBiometricModalOpen(false)} />
+        </Modal>
+
+        <Modal
+          isOpen={isActivityModalOpen}
+          onClose={() => setIsActivityModalOpen(false)}
+          title="Add Activity"
+        >
+          <ActivityForm onSuccess={() => setIsActivityModalOpen(false)} />
+        </Modal>
 
         {/* Sample Chart */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
