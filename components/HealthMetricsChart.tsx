@@ -15,27 +15,97 @@ interface ChartDataPoint {
   bodyFatPercentage?: number;
 }
 
-// Health range thresholds
-const BODY_FAT_RANGES = {
-  male: {
-    essential: 5,
-    athletic: 13,
-    fitness: 17,
-    average: 24,
-    obese: 25,
-  },
-  female: {
-    essential: 13,
-    athletic: 20,
-    fitness: 24,
-    average: 31,
-    obese: 32,
-  },
-};
+interface TooltipPayloadItem {
+  dataKey: string;
+  name: string;
+  value: number;
+  color: string;
+  payload: ChartDataPoint;
+}
 
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+}
+
+// Health range thresholds
 const WAIST_HEIGHT_RANGES = {
   healthy: 0.5,
   increased: 0.6,
+};
+
+// Get color for waist-to-height ratio
+const getWaistHeightColor = (ratio: number): string => {
+  if (ratio < WAIST_HEIGHT_RANGES.healthy) {
+    return '#10b981'; // green
+  } else if (ratio < WAIST_HEIGHT_RANGES.increased) {
+    return '#f59e0b'; // amber
+  } else {
+    return '#ef4444'; // red
+  }
+};
+
+// Get color for body fat percentage (assuming average gender distribution)
+const getBodyFatColor = (percentage: number): string => {
+  // Using general ranges
+  if (percentage < 18) {
+    return '#3b82f6'; // blue - athletic
+  } else if (percentage < 25) {
+    return '#10b981'; // green - fitness
+  } else if (percentage < 32) {
+    return '#f59e0b'; // amber - average
+  } else {
+    return '#ef4444'; // red - obese
+  }
+};
+
+// Custom tooltip to show color-coded insights
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        <p className="font-semibold mb-2">{payload[0].payload.date}</p>
+        {payload.map((entry: TooltipPayloadItem, index: number) => {
+          let insight = '';
+          let color = entry.color;
+
+          if (entry.dataKey === 'waistHeightRatio' && entry.value) {
+            const ratio = entry.value;
+            color = getWaistHeightColor(ratio);
+            if (ratio < WAIST_HEIGHT_RANGES.healthy) {
+              insight = ' (Healthy)';
+            } else if (ratio < WAIST_HEIGHT_RANGES.increased) {
+              insight = ' (Increased Risk)';
+            } else {
+              insight = ' (High Risk)';
+            }
+          } else if (entry.dataKey === 'bodyFatPercentage' && entry.value) {
+            const percentage = entry.value;
+            color = getBodyFatColor(percentage);
+            if (percentage < 18) {
+              insight = ' (Athletic)';
+            } else if (percentage < 25) {
+              insight = ' (Fitness)';
+            } else if (percentage < 32) {
+              insight = ' (Average)';
+            } else {
+              insight = ' (High)';
+            }
+          }
+
+          return (
+            <p key={index} style={{ color }} className="text-sm">
+              {entry.name}: {entry.value}
+              {entry.dataKey === 'weight' && ' kg'}
+              {entry.dataKey === 'bodyFatPercentage' && '%'}
+              <span className="font-semibold">{insight}</span>
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
 };
 
 export default function HealthMetricsChart({ biometrics, profile }: HealthMetricsChartProps) {
@@ -87,80 +157,6 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
   };
 
   const chartData = processChartData();
-
-  // Get color for waist-to-height ratio
-  const getWaistHeightColor = (ratio: number): string => {
-    if (ratio < WAIST_HEIGHT_RANGES.healthy) {
-      return '#10b981'; // green
-    } else if (ratio < WAIST_HEIGHT_RANGES.increased) {
-      return '#f59e0b'; // amber
-    } else {
-      return '#ef4444'; // red
-    }
-  };
-
-  // Get color for body fat percentage (assuming average gender distribution)
-  const getBodyFatColor = (percentage: number): string => {
-    // Using general ranges
-    if (percentage < 18) {
-      return '#3b82f6'; // blue - athletic
-    } else if (percentage < 25) {
-      return '#10b981'; // green - fitness
-    } else if (percentage < 32) {
-      return '#f59e0b'; // amber - average
-    } else {
-      return '#ef4444'; // red - obese
-    }
-  };
-
-  // Custom tooltip to show color-coded insights
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-          <p className="font-semibold mb-2">{payload[0].payload.date}</p>
-          {payload.map((entry: any, index: number) => {
-            let insight = '';
-            let color = entry.color;
-
-            if (entry.dataKey === 'waistHeightRatio' && entry.value) {
-              const ratio = entry.value;
-              color = getWaistHeightColor(ratio);
-              if (ratio < WAIST_HEIGHT_RANGES.healthy) {
-                insight = ' (Healthy)';
-              } else if (ratio < WAIST_HEIGHT_RANGES.increased) {
-                insight = ' (Increased Risk)';
-              } else {
-                insight = ' (High Risk)';
-              }
-            } else if (entry.dataKey === 'bodyFatPercentage' && entry.value) {
-              const percentage = entry.value;
-              color = getBodyFatColor(percentage);
-              if (percentage < 18) {
-                insight = ' (Athletic)';
-              } else if (percentage < 25) {
-                insight = ' (Fitness)';
-              } else if (percentage < 32) {
-                insight = ' (Average)';
-              } else {
-                insight = ' (High)';
-              }
-            }
-
-            return (
-              <p key={index} style={{ color }} className="text-sm">
-                {entry.name}: {entry.value}
-                {entry.dataKey === 'weight' && ' kg'}
-                {entry.dataKey === 'bodyFatPercentage' && '%'}
-                <span className="font-semibold">{insight}</span>
-              </p>
-            );
-          })}
-        </div>
-      );
-    }
-    return null;
-  };
 
   if (chartData.length === 0) {
     return (
