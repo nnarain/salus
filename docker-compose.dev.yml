@@ -1,0 +1,40 @@
+services:
+  # PostgreSQL Database with Supabase extensions
+  db:
+    image: supabase/postgres:15.1.1.54
+    container_name: health-tracker-db-dev
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - db-data-dev:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+      - ./supabase/migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Supabase Studio - Database Management UI (optional)
+  studio:
+    image: supabase/studio:20231123-64a766c
+    container_name: health-tracker-studio
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      SUPABASE_URL: http://localhost:8000
+      STUDIO_PG_META_URL: http://localhost:8000/pg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DEFAULT_ORGANIZATION: Default Organization
+      DEFAULT_PROJECT: Health Tracker
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      NEXT_PUBLIC_ENABLE_LOGS: "true"
+
+volumes:
+  db-data-dev:

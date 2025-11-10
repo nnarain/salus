@@ -57,9 +57,14 @@ The Docker Compose setup includes the following services:
 
 ## Database Migrations
 
-The database migrations are automatically applied when the database container starts for the first time. The migration files are located in `./supabase/migrations/` and are mounted as initialization scripts.
+The database setup happens automatically in two stages:
 
-If you need to run additional migrations:
+1. **Initialization** (00-init-supabase-roles.sh): Sets up required Supabase roles and schemas
+2. **Migrations** (01-run-migrations.sh): Runs all SQL migration files from `./supabase/migrations/`
+
+These scripts run automatically when the database container starts for the first time.
+
+If you need to run additional migrations after initial setup:
 
 1. Add your SQL file to `./supabase/migrations/`
 2. Restart the database container:
@@ -170,7 +175,33 @@ docker compose up -d
 
 ## Development
 
-For development with hot-reload:
+For development with hot-reload, you have two options:
+
+### Option 1: Simplified Stack (Recommended for Development)
+
+Use the simplified docker-compose file that only runs the database:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+This starts only PostgreSQL and Supabase Studio (database UI at http://localhost:3001).
+
+Then run the Next.js dev server locally:
+```bash
+# Create a local .env.local file
+cp .env.local.example .env.local
+
+# Edit .env.local and set:
+# NEXT_PUBLIC_SUPABASE_URL=http://localhost:5432 (direct PostgreSQL)
+# Or use Supabase client library's direct connection
+
+npm run dev
+```
+
+### Option 2: Full Stack Without App
+
+For development with the full Supabase stack:
 
 1. Comment out the `app` service in `docker-compose.yml`
 2. Start only the Supabase services:
