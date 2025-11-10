@@ -6,6 +6,7 @@ interface StatCardProps {
   icon?: React.ReactNode;
   trend?: 'up' | 'down' | 'neutral';
   loading?: boolean;
+  onInfoClick?: () => void;
 }
 
 export default function StatCard({
@@ -15,14 +16,37 @@ export default function StatCard({
   description,
   icon,
   loading = false,
+  onInfoClick,
 }: StatCardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 border-blue-200 dark:border-blue-700 hover:shadow-xl transition-all">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-            {title}
-          </p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              {title}
+            </p>
+            {onInfoClick && (
+              <button
+                onClick={onInfoClick}
+                className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                aria-label="More information"
+                title="More information"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </button>
+            )}
+          </div>
           {loading ? (
             <div className="animate-pulse">
               <div className="h-8 bg-gray-300 dark:bg-gray-600 rounded w-24 mb-2"></div>
