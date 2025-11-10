@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
 import UserProfileForm from '@/components/UserProfileForm';
 import StressForm from '@/components/StressForm';
 import Modal from '@/components/Modal';
+import StatCard from '@/components/StatCard';
+import type { BiometricEntry, UserProfile } from '@/lib/types';
 
 // Sample data for the chart
 const sampleHealthData = [
@@ -24,6 +26,86 @@ export default function Home() {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStressModalOpen, setIsStressModalOpen] = useState(false);
+  const [lowestWeight, setLowestWeight] = useState<number | null>(null);
+  const [lowestWeightUnit, setLowestWeightUnit] = useState<string>('kg');
+  const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch biometrics and profile data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        // Fetch biometrics data
+        const biometricsResponse = await fetch('/api/biometrics');
+        const biometricsData = await biometricsResponse.json();
+        
+        // Fetch profile data
+        const profileResponse = await fetch('/api/profile');
+        const profileData = await profileResponse.json();
+
+        if (biometricsData.data && Array.isArray(biometricsData.data)) {
+          const biometrics: BiometricEntry[] = biometricsData.data;
+          
+          // Calculate lowest weight in last 7 days
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          
+          const recentWeights = biometrics.filter((entry) => {
+            const entryDate = new Date(entry.date);
+            return entry.metric_type === 'weight' && entryDate >= sevenDaysAgo;
+          });
+
+          if (recentWeights.length > 0) {
+            // Convert all weights to kg for comparison
+            const weightsInKg = recentWeights.map((entry) => {
+              if (entry.unit === 'lbs') {
+                return entry.value * 0.453592; // Convert lbs to kg
+              }
+              return entry.value;
+            });
+            
+            const minWeight = Math.min(...weightsInKg);
+            setLowestWeight(minWeight);
+            setLowestWeightUnit('kg');
+          }
+
+          // Calculate waist-to-height ratio
+          const profile: UserProfile | null = profileData.data;
+          if (profile && profile.height) {
+            const latestWaist = biometrics.find((entry) => entry.metric_type === 'waistline');
+            
+            if (latestWaist) {
+              // Convert height to cm
+              let heightInCm = profile.height;
+              if (profile.height_unit === 'inches') {
+                heightInCm = profile.height * 2.54;
+              } else if (profile.height_unit === 'feet') {
+                heightInCm = profile.height * 30.48;
+              }
+              
+              // Convert waist to cm
+              let waistInCm = latestWaist.value;
+              if (latestWaist.unit === 'inches') {
+                waistInCm = latestWaist.value * 2.54;
+              }
+              
+              // Calculate ratio
+              const ratio = waistInCm / heightInCm;
+              setWaistHeightRatio(ratio);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -59,6 +141,57 @@ export default function Home() {
           <p className="text-xl text-gray-600 dark:text-gray-300">
             Self-hosted personal health tracker built with Next.js 15, Supabase, Tailwind CSS, and Recharts
           </p>
+        </div>
+
+        {/* Key Metrics Display */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <StatCard
+            title="Lowest Weight (Last 7 Days)"
+            value={lowestWeight !== null ? lowestWeight.toFixed(1) : 'N/A'}
+            unit={lowestWeight !== null ? lowestWeightUnit : undefined}
+            description="Minimum weight recorded in the past week"
+            loading={loading}
+            icon={
+              <svg
+                className="w-6 h-6 text-blue-600 dark:text-blue-400"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
+              </svg>
+            }
+          />
+          <StatCard
+            title="Waist to Height Ratio"
+            value={waistHeightRatio !== null ? waistHeightRatio.toFixed(3) : 'N/A'}
+            description={
+              waistHeightRatio !== null
+                ? waistHeightRatio < 0.5
+                  ? 'Healthy range'
+                  : waistHeightRatio < 0.6
+                  ? 'Increased health risk'
+                  : 'High health risk'
+                : 'Add waist measurement and height to calculate'
+            }
+            loading={loading}
+            icon={
+              <svg
+                className="w-6 h-6 text-blue-600 dark:text-blue-400"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+              </svg>
+            }
+          />
         </div>
 
         {/* Action Buttons for Forms */}

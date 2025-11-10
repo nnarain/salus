@@ -39,6 +39,9 @@ export interface UserProfile {
   height?: number;
   height_unit?: 'cm' | 'inches' | 'feet';
   age?: number;
+  notes?: string;
+}
+
 // Type definitions for stress data
 
 export interface StressEntry {
