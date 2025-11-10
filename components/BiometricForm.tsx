@@ -71,10 +71,22 @@ export default function BiometricForm({ onSuccess }: BiometricFormProps = {}) {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => {
+      // Auto-update unit when metric type changes
+      if (name === 'metric_type') {
+        if (value === 'weight') {
+          return { ...prev, [name]: value, unit: 'kg' };
+        } else if (value === 'body_fat_percentage') {
+          return { ...prev, [name]: value, unit: '%' };
+        } else if (value === 'waistline') {
+          return { ...prev, [name]: value, unit: 'cm' };
+        }
+      }
+      return {
+        ...prev,
+        [name]: value,
+      };
+    });
   };
 
   return (
@@ -111,6 +123,7 @@ export default function BiometricForm({ onSuccess }: BiometricFormProps = {}) {
           >
             <option value="weight">Weight</option>
             <option value="waistline">Waistline</option>
+            <option value="body_fat_percentage">Body Fat Percentage</option>
           </select>
         </div>
 
@@ -151,6 +164,8 @@ export default function BiometricForm({ onSuccess }: BiometricFormProps = {}) {
                   <option value="kg">kg</option>
                   <option value="lbs">lbs</option>
                 </>
+              ) : formData.metric_type === 'body_fat_percentage' ? (
+                <option value="%">%</option>
               ) : (
                 <>
                   <option value="cm">cm</option>
