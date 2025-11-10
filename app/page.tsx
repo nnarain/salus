@@ -9,6 +9,7 @@ import StressForm from '@/components/StressForm';
 import Modal from '@/components/Modal';
 import StatCard from '@/components/StatCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
+import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
 
 // Sample data for the chart
@@ -28,6 +29,7 @@ export default function Home() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStressModalOpen, setIsStressModalOpen] = useState(false);
   const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
+  const [isBodyFatInfoModalOpen, setIsBodyFatInfoModalOpen] = useState(false);
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
   const [lowestWeightUnit, setLowestWeightUnit] = useState<string>('kg');
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
@@ -215,6 +217,7 @@ export default function Home() {
                 : 'Add body fat percentage measurement'
             }
             loading={loading}
+            onInfoClick={() => setIsBodyFatInfoModalOpen(true)}
             icon={
               <svg
                 className="w-6 h-6 text-blue-600 dark:text-blue-400"
@@ -324,6 +327,11 @@ export default function Home() {
         <WaistHeightInfoModal
           isOpen={isWaistHeightInfoModalOpen}
           onClose={() => setIsWaistHeightInfoModalOpen(false)}
+        />
+
+        <BodyFatInfoModal
+          isOpen={isBodyFatInfoModalOpen}
+          onClose={() => setIsBodyFatInfoModalOpen(false)}
         />
 
         {/* Sample Chart */}
