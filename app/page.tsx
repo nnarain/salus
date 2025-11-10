@@ -5,6 +5,7 @@ import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
 import UserProfileForm from '@/components/UserProfileForm';
 import StressForm from '@/components/StressForm';
+import CsvImportForm from '@/components/CsvImportForm';
 import Modal from '@/components/Modal';
 import StatCard from '@/components/StatCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
@@ -17,6 +18,7 @@ export default function Home() {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStressModalOpen, setIsStressModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
   const [isBodyFatInfoModalOpen, setIsBodyFatInfoModalOpen] = useState(false);
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
@@ -121,8 +123,26 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <main className="container mx-auto px-4 py-16">
-        {/* Settings Icon - Top Right */}
-        <div className="absolute top-4 right-4">
+        {/* Settings and Import Icons - Top Right */}
+        <div className="absolute top-4 right-4 flex gap-3">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg hover:shadow-xl transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
+            aria-label="Import Data"
+            title="Import CSV Data"
+          >
+            <svg
+              className="w-6 h-6 text-gray-700 dark:text-gray-300"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+          </button>
           <button
             onClick={() => setIsProfileModalOpen(true)}
             className="bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg hover:shadow-xl transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -319,6 +339,14 @@ export default function Home() {
           title="Add Stress Level"
         >
           <StressForm onSuccess={() => setIsStressModalOpen(false)} />
+        </Modal>
+
+        <Modal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          title="Import CSV Data"
+        >
+          <CsvImportForm onSuccess={() => { setIsImportModalOpen(false); handleModalSuccess(); }} />
         </Modal>
 
         <WaistHeightInfoModal
