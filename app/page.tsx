@@ -29,6 +29,7 @@ export default function Home() {
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
   const [lowestWeightUnit, setLowestWeightUnit] = useState<string>('kg');
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
+  const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Fetch biometrics and profile data
@@ -96,6 +97,15 @@ export default function Home() {
               setWaistHeightRatio(ratio);
             }
           }
+
+          // Get latest body fat percentage
+          const latestBodyFat = biometrics
+            .filter((entry) => entry.metric_type === 'body_fat_percentage')
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+          
+          if (latestBodyFat) {
+            setBodyFatPercentage(latestBodyFat.value);
+          }
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -144,7 +154,7 @@ export default function Home() {
         </div>
 
         {/* Key Metrics Display */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           <StatCard
             title="Lowest Weight (Last 7 Days)"
             value={lowestWeight !== null ? lowestWeight.toFixed(1) : 'N/A'}
@@ -189,6 +199,30 @@ export default function Home() {
                 stroke="currentColor"
               >
                 <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+              </svg>
+            }
+          />
+          <StatCard
+            title="Body Fat Percentage"
+            value={bodyFatPercentage !== null ? bodyFatPercentage.toFixed(1) : 'N/A'}
+            unit={bodyFatPercentage !== null ? '%' : undefined}
+            description={
+              bodyFatPercentage !== null
+                ? 'Latest measurement'
+                : 'Add body fat percentage measurement'
+            }
+            loading={loading}
+            icon={
+              <svg
+                className="w-6 h-6 text-blue-600 dark:text-blue-400"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
               </svg>
             }
           />
