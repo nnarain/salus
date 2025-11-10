@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
 import UserProfileForm from '@/components/UserProfileForm';
@@ -10,18 +9,8 @@ import Modal from '@/components/Modal';
 import StatCard from '@/components/StatCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import BodyFatInfoModal from '@/components/BodyFatInfoModal';
+import HealthMetricsChart from '@/components/HealthMetricsChart';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
-
-// Sample data for the chart
-const sampleHealthData = [
-  { date: 'Mon', steps: 8000, calories: 2100 },
-  { date: 'Tue', steps: 9500, calories: 2300 },
-  { date: 'Wed', steps: 7200, calories: 2000 },
-  { date: 'Thu', steps: 10500, calories: 2400 },
-  { date: 'Fri', steps: 8800, calories: 2200 },
-  { date: 'Sat', steps: 12000, calories: 2600 },
-  { date: 'Sun', steps: 6500, calories: 1900 },
-];
 
 export default function Home() {
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
@@ -35,29 +24,31 @@ export default function Home() {
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [biometrics, setBiometrics] = useState<BiometricEntry[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   // Fetch biometrics and profile data
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
 
-        // Fetch biometrics data
-        const biometricsResponse = await fetch('/api/biometrics');
-        const biometricsData = await biometricsResponse.json();
-        
-        // Fetch profile data
+      // Fetch biometrics data
+      const biometricsResponse = await fetch('/api/biometrics');
+      const biometricsData = await biometricsResponse.json();
+      
+      // Fetch profile data
         const profileResponse = await fetch('/api/profile');
         const profileData = await profileResponse.json();
 
         if (biometricsData.data && Array.isArray(biometricsData.data)) {
-          const biometrics: BiometricEntry[] = biometricsData.data;
+          const biometricsArray: BiometricEntry[] = biometricsData.data;
+          setBiometrics(biometricsArray);
           
           // Calculate lowest weight in last 7 days
           const sevenDaysAgo = new Date();
           sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
           
-          const recentWeights = biometrics.filter((entry) => {
+          const recentWeights = biometricsArray.filter((entry) => {
             const entryDate = new Date(entry.date);
             return entry.metric_type === 'weight' && entryDate >= sevenDaysAgo;
           });
@@ -77,17 +68,18 @@ export default function Home() {
           }
 
           // Calculate waist-to-height ratio
-          const profile: UserProfile | null = profileData.data;
-          if (profile && profile.height) {
-            const latestWaist = biometrics.find((entry) => entry.metric_type === 'waistline');
+          const profileData2: UserProfile | null = profileData.data;
+          setProfile(profileData2);
+          if (profileData2 && profileData2.height) {
+            const latestWaist = biometricsArray.find((entry) => entry.metric_type === 'waistline');
             
             if (latestWaist) {
               // Convert height to cm
-              let heightInCm = profile.height;
-              if (profile.height_unit === 'inches') {
-                heightInCm = profile.height * 2.54;
-              } else if (profile.height_unit === 'feet') {
-                heightInCm = profile.height * 30.48;
+              let heightInCm = profileData2.height;
+              if (profileData2.height_unit === 'inches') {
+                heightInCm = profileData2.height * 2.54;
+              } else if (profileData2.height_unit === 'feet') {
+                heightInCm = profileData2.height * 30.48;
               }
               
               // Convert waist to cm
@@ -103,7 +95,7 @@ export default function Home() {
           }
 
           // Get latest body fat percentage
-          const latestBodyFat = biometrics
+          const latestBodyFat = biometricsArray
             .filter((entry) => entry.metric_type === 'body_fat_percentage')
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
           
@@ -118,8 +110,13 @@ export default function Home() {
       }
     };
 
+  useEffect(() => {
     fetchData();
   }, []);
+
+  const handleModalSuccess = () => {
+    fetchData();
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -297,7 +294,7 @@ export default function Home() {
           onClose={() => setIsBiometricModalOpen(false)}
           title="Add Biometric Data"
         >
-          <BiometricForm onSuccess={() => setIsBiometricModalOpen(false)} />
+          <BiometricForm onSuccess={() => { setIsBiometricModalOpen(false); handleModalSuccess(); }} />
         </Modal>
 
         <Modal
@@ -313,7 +310,7 @@ export default function Home() {
           onClose={() => setIsProfileModalOpen(false)}
           title="User Settings"
         >
-          <UserProfileForm onSuccess={() => setIsProfileModalOpen(false)} />
+          <UserProfileForm onSuccess={() => { setIsProfileModalOpen(false); handleModalSuccess(); }} />
         </Modal>
 
         <Modal
@@ -334,23 +331,8 @@ export default function Home() {
           onClose={() => setIsBodyFatInfoModalOpen(false)}
         />
 
-        {/* Sample Chart */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Weekly Health Metrics (Sample Data)
-          </h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={sampleHealthData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="steps" stroke="#3b82f6" strokeWidth={2} />
-              <Line type="monotone" dataKey="calories" stroke="#10b981" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {/* Health Metrics Chart */}
+        <HealthMetricsChart biometrics={biometrics} profile={profile} />
 
         {/* Footer */}
         <div className="text-center mt-12">
