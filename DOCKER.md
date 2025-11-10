@@ -15,7 +15,13 @@ This guide explains how to deploy the Health Tracker application using Docker Co
    cp .env.docker.example .env
    ```
 
-2. **Update environment variables** (optional but recommended for production):
+2. **(Optional) Validate the setup:**
+   ```bash
+   ./docker/validate.sh
+   ```
+   This script checks that all required files and configurations are in place.
+
+3. **Update environment variables** (optional but recommended for production):
    
    Edit `.env` and update the following critical values:
    - `POSTGRES_PASSWORD`: Set a strong database password
@@ -26,12 +32,12 @@ This guide explains how to deploy the Health Tracker application using Docker Co
    openssl rand -base64 32
    ```
 
-3. **Start the services:**
+4. **Start the services:**
    ```bash
    docker compose up -d
    ```
 
-4. **Access the application:**
+5. **Access the application:**
    - Health Tracker App: http://localhost:3000
    - Supabase API (Kong Gateway): http://localhost:8000
    - PostgreSQL Database: localhost:5432
