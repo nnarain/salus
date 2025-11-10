@@ -8,6 +8,7 @@ import UserProfileForm from '@/components/UserProfileForm';
 import StressForm from '@/components/StressForm';
 import Modal from '@/components/Modal';
 import StatCard from '@/components/StatCard';
+import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
 
 // Sample data for the chart
@@ -26,6 +27,7 @@ export default function Home() {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStressModalOpen, setIsStressModalOpen] = useState(false);
+  const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
   const [lowestWeightUnit, setLowestWeightUnit] = useState<string>('kg');
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
@@ -188,6 +190,7 @@ export default function Home() {
                 : 'Add waist measurement and height to calculate'
             }
             loading={loading}
+            onInfoClick={() => setIsWaistHeightInfoModalOpen(true)}
             icon={
               <svg
                 className="w-6 h-6 text-blue-600 dark:text-blue-400"
@@ -317,6 +320,11 @@ export default function Home() {
         >
           <StressForm onSuccess={() => setIsStressModalOpen(false)} />
         </Modal>
+
+        <WaistHeightInfoModal
+          isOpen={isWaistHeightInfoModalOpen}
+          onClose={() => setIsWaistHeightInfoModalOpen(false)}
+        />
 
         {/* Sample Chart */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
