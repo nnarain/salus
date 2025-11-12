@@ -59,7 +59,7 @@ done
 
 # Check if required files exist
 echo "📄 Checking required files..."
-for file in Dockerfile docker/kong.yml; do
+for file in Dockerfile; do
     if [ -f "$file" ]; then
         echo "✅ $file exists"
     else
@@ -72,11 +72,11 @@ echo ""
 echo "✅ All validation checks passed!"
 echo ""
 echo "📚 Next steps:"
-echo "  1. Review and update .env file with your configuration"
-echo "  2. Run 'docker compose up -d' to start all services"
-echo "  3. Access the app at http://localhost:3000"
-echo "  4. Access Supabase API at http://localhost:8000"
+echo "  1. Run 'docker compose up -d' to start all services"
+echo "  2. Access the app at http://localhost:3000"
+echo "  3. Access PostgREST API at http://localhost:3001"
 echo ""
 echo "For development, you can use:"
-echo "  docker compose -f docker-compose.dev.yml up -d"
+echo "  docker compose up -d db rest  # Start backend only"
+echo "  npm run dev                    # Run Next.js locally"
 echo ""

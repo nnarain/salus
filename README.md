@@ -16,7 +16,7 @@ You can run the Health Tracker in two ways:
 
 ### Option 1: Docker (Recommended - Fully Self-Hosted)
 
-The easiest way to get started is using Docker Compose with a self-hosted Supabase instance:
+The easiest way to get started is using Docker Compose:
 
 1. Clone the repository:
 ```bash
@@ -24,19 +24,14 @@ git clone https://github.com/nnarain/health-tracker.git
 cd health-tracker
 ```
 
-2. Copy the environment file:
-```bash
-cp .env.docker.example .env
-```
-
-3. Start all services:
+2. Start all services:
 ```bash
 docker compose up -d
 ```
 
-4. Access the application at http://localhost:3000
+3. Access the application at http://localhost:3000
 
-For detailed Docker setup instructions, see [DOCKER.md](DOCKER.md).
+The setup includes PostgreSQL, PostgREST API, and the Next.js app. For detailed instructions, see [DOCKER.md](DOCKER.md).
 
 ### Option 2: Local Development with Cloud Supabase
 
