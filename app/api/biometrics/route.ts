@@ -63,7 +63,7 @@ export async function GET() {
       .from('biometrics')
       .select('*')
       .order('date', { ascending: false })
-      .limit(100);
+      .limit(500);
 
     if (error) {
       console.error('Supabase error:', error);

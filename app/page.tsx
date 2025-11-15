@@ -346,7 +346,10 @@ export default function Home() {
           onClose={() => setIsImportModalOpen(false)}
           title="Import CSV Data"
         >
-          <CsvImportForm onSuccess={() => { setIsImportModalOpen(false); handleModalSuccess(); }} />
+          <CsvImportForm onSuccess={() => { 
+            handleModalSuccess(); 
+            setTimeout(() => setIsImportModalOpen(false), 1500);
+          }} />
         </Modal>
 
         <WaistHeightInfoModal

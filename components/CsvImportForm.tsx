@@ -64,8 +64,9 @@ export default function CsvImportForm({ onSuccess }: CsvImportFormProps = {}) {
         fileInput.value = '';
       }
 
+      // Call onSuccess immediately to refresh data
       if (onSuccess) {
-        setTimeout(() => onSuccess(), 2000);
+        onSuccess();
       }
     } catch (error) {
       setMessage({
