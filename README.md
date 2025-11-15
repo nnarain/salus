@@ -12,6 +12,29 @@ Self hosted personal health tracker built with Next.js 15, Supabase, Tailwind CS
 
 ## Getting Started
 
+You can run the Health Tracker in two ways:
+
+### Option 1: Docker (Recommended - Fully Self-Hosted)
+
+The easiest way to get started is using Docker Compose:
+
+1. Clone the repository:
+```bash
+git clone https://github.com/nnarain/health-tracker.git
+cd health-tracker
+```
+
+2. Start all services:
+```bash
+docker compose up -d
+```
+
+3. Access the application at http://localhost:3000
+
+The setup includes PostgreSQL, PostgREST API, and the Next.js app. For detailed instructions, see [DOCKER.md](DOCKER.md).
+
+### Option 2: Local Development with Cloud Supabase
+
 ### Prerequisites
 
 - Node.js 18.17 or later
