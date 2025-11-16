@@ -38,6 +38,11 @@ function getBodyFatBorderColor(percentage: number | null): string {
   return 'border-orange-200 dark:border-orange-700';
 }
 
+// Helper function to convert pounds to kilograms
+function lbsToKg(lbs: number): number {
+  return lbs * 0.453592;
+}
+
 export default function Home() {
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
@@ -85,7 +90,7 @@ export default function Home() {
             // Convert all weights to kg for comparison
             const weightsInKg = recentWeights.map((entry) => {
               if (entry.unit === 'lbs') {
-                return entry.value * 0.453592; // Convert lbs to kg
+                return lbsToKg(entry.value);
               }
               return entry.value;
             });
@@ -93,6 +98,21 @@ export default function Home() {
             const minWeight = Math.min(...weightsInKg);
             setLowestWeight(minWeight);
             setLowestWeightUnit('kg');
+          }
+          else {
+            // No weights in last 7 days, take the last recorded weight
+            const allWeights = biometricsArray.filter((entry) => entry.metric_type === 'weight');
+            if (allWeights.length > 0) {
+              const latestWeightEntry = allWeights.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+              let weightInKg = latestWeightEntry.value;
+              if (latestWeightEntry.unit === 'lbs') {
+                weightInKg = lbsToKg(latestWeightEntry.value);
+              }
+              setLowestWeight(weightInKg);
+              setLowestWeightUnit('kg');
+            } else {
+              setLowestWeight(null);
+            }
           }
 
           // Calculate waist-to-height ratio
