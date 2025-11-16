@@ -2,6 +2,7 @@
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
+import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor } from '@/lib/healthRisk';
 
 interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
@@ -13,6 +14,7 @@ interface ChartDataPoint {
   weight?: number;
   waistHeightRatio?: number;
   bodyFatPercentage?: number;
+  healthRisk?: number;
 }
 
 interface TooltipPayloadItem {
@@ -91,6 +93,10 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
             } else {
               insight = ' (High)';
             }
+          } else if (entry.dataKey === 'healthRisk' && entry.value !== undefined) {
+            const riskScore = entry.value;
+            color = getRiskLevelColor(riskScore);
+            insight = ` (${getRiskLevelDescription(riskScore)})`;
           }
 
           return (
@@ -98,6 +104,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
               {entry.name}: {entry.value}
               {entry.dataKey === 'weight' && ' kg'}
               {entry.dataKey === 'bodyFatPercentage' && '%'}
+              {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
               <span className="font-semibold">{insight}</span>
             </p>
           );
@@ -153,6 +160,17 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
       return new Date(a.date).getTime() - new Date(b.date).getTime();
     });
 
+    // Calculate health risk for each data point
+    chartData.forEach((dataPoint) => {
+      const healthRisk = calculateHealthRiskIndicator(
+        dataPoint.bodyFatPercentage,
+        dataPoint.waistHeightRatio
+      );
+      if (healthRisk !== null) {
+        dataPoint.healthRisk = Number(healthRisk.toFixed(3));
+      }
+    });
+
     return chartData;
   };
 
@@ -192,10 +210,15 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
             <div className="w-4 h-4 rounded" style={{ backgroundColor: '#06b6d4' }}></div>
             <span>Body Fat %</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#f97316' }}></div>
+            <span>Health Risk Indicator</span>
+          </div>
         </div>
         <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
           <p>💡 Waist-to-Height Ratio: &lt;0.5 Healthy, 0.5-0.6 Increased Risk, &gt;0.6 High Risk</p>
           <p>💡 Body Fat %: &lt;18 Athletic, 18-25 Fitness, 25-32 Average, &gt;32 High</p>
+          <p>💡 Health Risk: Averaged indicator from body fat % and waist-to-height ratio (0=Low Risk, 1=High Risk)</p>
         </div>
       </div>
       <ResponsiveContainer width="100%" height={400}>
@@ -208,10 +231,24 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
             textAnchor="end"
             height={80}
           />
-          <YAxis />
+          <YAxis yAxisId="left" />
+          <YAxis 
+            yAxisId="right" 
+            orientation="right"
+            domain={[0, 1]}
+            ticks={[0, 0.33, 0.67, 1]}
+            tickFormatter={(value) => {
+              if (value === 0) return 'Low Risk';
+              if (value === 0.33) return '';
+              if (value === 0.67) return '';
+              if (value === 1) return 'High Risk';
+              return '';
+            }}
+          />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
           <Line 
+            yAxisId="left"
             type="monotone" 
             dataKey="weight" 
             stroke="#8b5cf6" 
@@ -221,6 +258,7 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
             dot={{ r: 4 }}
           />
           <Line 
+            yAxisId="left"
             type="monotone" 
             dataKey="waistHeightRatio" 
             stroke="#ec4899" 
@@ -230,6 +268,7 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
             dot={{ r: 4 }}
           />
           <Line 
+            yAxisId="left"
             type="monotone" 
             dataKey="bodyFatPercentage" 
             stroke="#06b6d4" 
@@ -237,6 +276,16 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
             name="Body Fat %"
             connectNulls
             dot={{ r: 4 }}
+          />
+          <Line 
+            yAxisId="right"
+            type="monotone" 
+            dataKey="healthRisk" 
+            stroke="#f97316" 
+            strokeWidth={3} 
+            name="Health Risk"
+            connectNulls
+            dot={{ r: 5 }}
           />
         </LineChart>
       </ResponsiveContainer>
