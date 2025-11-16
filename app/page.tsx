@@ -13,6 +13,30 @@ import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import HealthMetricsChart from '@/components/HealthMetricsChart';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
 
+// Helper function to determine waist-to-height ratio border color
+function getWaistHeightBorderColor(ratio: number | null): string {
+  if (ratio === null) return 'border-blue-200 dark:border-blue-700';
+  if (ratio < 0.40) return 'border-green-200 dark:border-green-700';
+  if (ratio < 0.50) return 'border-green-300 dark:border-green-600';
+  if (ratio < 0.60) return 'border-yellow-200 dark:border-yellow-700';
+  return 'border-red-200 dark:border-red-700';
+}
+
+// Helper function to determine body fat percentage border color
+// For simplicity, using general ranges (can be refined based on gender if needed)
+function getBodyFatBorderColor(percentage: number | null): string {
+  if (percentage === null) return 'border-blue-200 dark:border-blue-700';
+  // Essential fat range
+  if (percentage < 14) return 'border-blue-200 dark:border-blue-700';
+  // Athletic/Fitness range
+  if (percentage < 18) return 'border-green-200 dark:border-green-700';
+  if (percentage < 25) return 'border-green-300 dark:border-green-600';
+  // Average/Acceptable range
+  if (percentage < 32) return 'border-yellow-200 dark:border-yellow-700';
+  // Obese range
+  return 'border-orange-200 dark:border-orange-700';
+}
+
 export default function Home() {
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
@@ -210,6 +234,7 @@ export default function Home() {
             }
             loading={loading}
             onInfoClick={() => setIsWaistHeightInfoModalOpen(true)}
+            borderColor={getWaistHeightBorderColor(waistHeightRatio)}
             icon={
               <svg
                 className="w-6 h-6 text-blue-600 dark:text-blue-400"
@@ -235,6 +260,7 @@ export default function Home() {
             }
             loading={loading}
             onInfoClick={() => setIsBodyFatInfoModalOpen(true)}
+            borderColor={getBodyFatBorderColor(bodyFatPercentage)}
             icon={
               <svg
                 className="w-6 h-6 text-blue-600 dark:text-blue-400"

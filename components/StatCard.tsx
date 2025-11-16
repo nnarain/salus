@@ -7,6 +7,7 @@ interface StatCardProps {
   trend?: 'up' | 'down' | 'neutral';
   loading?: boolean;
   onInfoClick?: () => void;
+  borderColor?: string;
 }
 
 export default function StatCard({
@@ -17,9 +18,10 @@ export default function StatCard({
   icon,
   loading = false,
   onInfoClick,
+  borderColor = 'border-blue-200 dark:border-blue-700',
 }: StatCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 border-blue-200 dark:border-blue-700 hover:shadow-xl transition-all">
+    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 ${borderColor} hover:shadow-xl transition-all`}>
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
