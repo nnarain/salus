@@ -1,8 +1,8 @@
 "use client";
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, AreaChart, Area, ComposedChart } from 'recharts';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
-import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor } from '@/lib/healthRisk';
+import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
 
 interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
@@ -15,6 +15,9 @@ interface ChartDataPoint {
   waistHeightRatio?: number;
   bodyFatPercentage?: number;
   healthRisk?: number;
+  normalizedWaistHeight?: number;
+  normalizedBodyFat?: number;
+  averagedNormalizedRisk?: number;
 }
 
 interface TooltipPayloadItem {
@@ -97,11 +100,23 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
             const riskScore = entry.value;
             color = getRiskLevelColor(riskScore);
             insight = ` (${getRiskLevelDescription(riskScore)})`;
+          } else if (entry.dataKey === 'normalizedWaistHeight' && entry.value !== undefined) {
+            const normalized = entry.value;
+            color = getRiskLevelColor(normalized);
+            insight = ` (${getRiskLevelDescription(normalized)})`;
+          } else if (entry.dataKey === 'normalizedBodyFat' && entry.value !== undefined) {
+            const normalized = entry.value;
+            color = getRiskLevelColor(normalized);
+            insight = ` (${getRiskLevelDescription(normalized)})`;
+          } else if (entry.dataKey === 'averagedNormalizedRisk' && entry.value !== undefined) {
+            const normalized = entry.value;
+            color = getRiskLevelColor(normalized);
+            insight = ` (${getRiskLevelDescription(normalized)})`;
           }
 
           return (
             <p key={index} style={{ color }} className="text-sm">
-              {entry.name}: {entry.value}
+              {entry.name}: {entry.value.toFixed(3)}
               {entry.dataKey === 'weight' && ' kg'}
               {entry.dataKey === 'bodyFatPercentage' && '%'}
               {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
@@ -216,6 +231,35 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
     if (healthRisk !== null) {
       dataPoint.healthRisk = Number(healthRisk.toFixed(3));
     }
+
+    // Calculate normalized values
+    if (dataPoint.waistHeightRatio !== undefined) {
+      const normalized = normalizeHealthMetric(
+        dataPoint.waistHeightRatio,
+        WAIST_HEIGHT_ANCHORS.ideal,
+        WAIST_HEIGHT_ANCHORS.threshold
+      );
+      dataPoint.normalizedWaistHeight = Number(normalized.toFixed(3));
+    }
+
+    if (dataPoint.bodyFatPercentage !== undefined) {
+      const normalized = normalizeHealthMetric(
+        dataPoint.bodyFatPercentage,
+        BODY_FAT_ANCHORS.ideal,
+        BODY_FAT_ANCHORS.threshold
+      );
+      dataPoint.normalizedBodyFat = Number(normalized.toFixed(3));
+    }
+
+    // Calculate averaged normalized risk
+    if (dataPoint.normalizedWaistHeight !== undefined && dataPoint.normalizedBodyFat !== undefined) {
+      const average = (dataPoint.normalizedWaistHeight + dataPoint.normalizedBodyFat) / 2;
+      dataPoint.averagedNormalizedRisk = Number(average.toFixed(3));
+    } else if (dataPoint.normalizedWaistHeight !== undefined) {
+      dataPoint.averagedNormalizedRisk = dataPoint.normalizedWaistHeight;
+    } else if (dataPoint.normalizedBodyFat !== undefined) {
+      dataPoint.averagedNormalizedRisk = dataPoint.normalizedBodyFat;
+    }
   });
 
   return chartData;
@@ -243,6 +287,88 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
 
   return (
     <div className="space-y-6">
+      {/* Normalized Health Risk Chart */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          Health Risk Metrics (Normalized)
+        </h2>
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(236, 72, 153, 0.5)' }}></div>
+              <span>Normalized Waist-to-Height Ratio</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(6, 182, 212, 0.5)' }}></div>
+              <span>Normalized Body Fat %</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8b5cf6' }}></div>
+              <span>Averaged Health Risk</span>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+            <p>💡 Normalized metrics show health risk on a 0-1 scale where 0 = ideal health, 1 = high risk threshold.</p>
+            <p>💡 Waist-to-Height: 0 = {WAIST_HEIGHT_ANCHORS.ideal}, 1 = {WAIST_HEIGHT_ANCHORS.threshold} | Body Fat: 0 = {BODY_FAT_ANCHORS.ideal}%, 1 = {BODY_FAT_ANCHORS.threshold}%</p>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={400}>
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis 
+              dataKey="date" 
+              tick={{ fontSize: 12 }}
+              angle={-45}
+              textAnchor="end"
+              height={80}
+            />
+            <YAxis 
+              domain={[0, 1]}
+              tickFormatter={(value) => {
+                if (value === 0) return 'Low Risk (0)';
+                if (value === 1) return 'High Risk (1)';
+                return value.toFixed(1);
+              }}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+            {/* Reference lines for risk levels */}
+            <ReferenceArea y1={0} y2={0.33} fill="rgba(34, 197, 94, 0.1)" fillOpacity={1} />
+            <ReferenceArea y1={0.33} y2={0.67} fill="rgba(251, 191, 36, 0.1)" fillOpacity={1} />
+            <ReferenceArea y1={0.67} y2={1} fill="rgba(239, 68, 68, 0.1)" fillOpacity={1} />
+            <Area 
+              type="monotone" 
+              dataKey="normalizedWaistHeight" 
+              stroke="#ec4899" 
+              fill="#ec4899"
+              fillOpacity={0.3}
+              strokeWidth={2} 
+              name="Normalized Waist-to-Height"
+              connectNulls
+            />
+            <Area 
+              type="monotone" 
+              dataKey="normalizedBodyFat" 
+              stroke="#06b6d4" 
+              fill="#06b6d4"
+              fillOpacity={0.3}
+              strokeWidth={2} 
+              name="Normalized Body Fat %"
+              connectNulls
+            />
+            <Line 
+              type="monotone" 
+              dataKey="averagedNormalizedRisk" 
+              stroke="#8b5cf6" 
+              strokeWidth={4} 
+              name="Averaged Health Risk"
+              connectNulls
+              dot={{ r: 5, fill: '#8b5cf6' }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
       {/* Weight and Health Risk Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
