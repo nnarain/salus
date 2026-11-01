@@ -22,6 +22,9 @@ export default function UserProfileForm({
     height: '',
     height_unit: 'cm',
     age: '',
+    biological_sex: '',
+    activity_level: '',
+    daily_calorie_target: '',
     notes: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,6 +43,9 @@ export default function UserProfileForm({
             height: result.data.height?.toString() || '',
             height_unit: result.data.height_unit || 'cm',
             age: result.data.age?.toString() || '',
+            biological_sex: result.data.biological_sex || '',
+            activity_level: result.data.activity_level || '',
+            daily_calorie_target: result.data.daily_calorie_target?.toString() || '',
             notes: result.data.notes || '',
           });
         }
@@ -63,6 +69,11 @@ export default function UserProfileForm({
         height: formData.height ? parseFloat(formData.height) : undefined,
         height_unit: formData.height_unit as 'cm' | 'inches' | 'feet',
         age: formData.age ? parseInt(formData.age, 10) : undefined,
+        biological_sex: formData.biological_sex ? formData.biological_sex as 'male' | 'female' : undefined,
+        activity_level: formData.activity_level
+          ? formData.activity_level as 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'
+          : undefined,
+        daily_calorie_target: formData.daily_calorie_target ? parseInt(formData.daily_calorie_target, 10) : undefined,
         notes: formData.notes || undefined,
       };
 
@@ -114,9 +125,9 @@ export default function UserProfileForm({
 
   return (
     <div>
+      <form onSubmit={handleSubmit} className="space-y-6">
       <section className="mb-6 border-b border-gray-200 pb-6 dark:border-gray-700">
         <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">About you</h3>
-      <form onSubmit={handleSubmit} className="space-y-4">
         {/* Height Input */}
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -188,28 +199,68 @@ export default function UserProfileForm({
           />
         </div>
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {isSubmitting ? 'Saving...' : 'Save Profile'}
-        </button>
+      </section>
 
-        {/* Message Display */}
-        {message && (
-          <div
-            className={`p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-            }`}
-          >
-            {message.text}
+      <section className="mt-6 border-t border-gray-200 pt-6 dark:border-gray-700">
+        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Calorie estimate</h3>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          These optional inputs estimate maintenance calories; the result is always an estimate.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="biological_sex" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Biological sex coefficient (optional)
+            </label>
+            <select
+              id="biological_sex"
+              name="biological_sex"
+              value={formData.biological_sex}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">Not set</option>
+              <option value="male">Male formula (+5)</option>
+              <option value="female">Female formula (-161)</option>
+            </select>
           </div>
-        )}
-      </form>
+
+          <div>
+            <label htmlFor="activity_level" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Activity multiplier (optional)
+            </label>
+            <select
+              id="activity_level"
+              name="activity_level"
+              value={formData.activity_level}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">Not set</option>
+              <option value="sedentary">Sedentary · 1.2</option>
+              <option value="light">Light · 1.375</option>
+              <option value="moderate">Moderate · 1.55</option>
+              <option value="active">Active · 1.725</option>
+              <option value="very_active">Very active · 1.9</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="daily_calorie_target" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Daily calorie target (optional, kcal)
+            </label>
+            <input
+              type="number"
+              id="daily_calorie_target"
+              name="daily_calorie_target"
+              value={formData.daily_calorie_target}
+              onChange={handleChange}
+              min="1"
+              max="10000"
+              step="1"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            />
+          </div>
+        </div>
       </section>
 
       <section>
@@ -229,7 +280,7 @@ export default function UserProfileForm({
           <option value="all">All available data</option>
         </select>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          Applies to all charts. Your full history remains saved.
+          Applies to all charts and saves immediately.
         </p>
       </section>
 
@@ -248,9 +299,30 @@ export default function UserProfileForm({
           <option value="lbs">Pounds (lbs)</option>
         </select>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          Weight measurements are stored in kilograms. This changes only the summary card display.
+          Weight measurements are stored in kilograms. This display preference saves immediately.
         </p>
       </section>
+
+      <div className="border-t border-gray-200 pt-5 dark:border-gray-700">
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+          Personal details and calorie-estimate settings are saved together.
+        </p>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+        >
+          {isSubmitting ? 'Saving...' : 'Save Settings'}
+        </button>
+        {message && (
+          <div className={`mt-4 rounded-lg p-4 ${message.type === 'success'
+            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
+            {message.text}
+          </div>
+        )}
+      </div>
+      </form>
     </div>
   );
 }

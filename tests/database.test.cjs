@@ -132,15 +132,21 @@ test('an absent profile returns data:null', async () => {
 });
 
 test('profile save uses one atomic upsert and preserves its public response', async () => {
-  const saved = { id: 'profile-id', height: 175, height_unit: 'cm', age: 35, notes: 'test' };
+  const saved = {
+    id: 'profile-id', height: 175, height_unit: 'cm', age: 35, notes: 'test',
+    biological_sex: 'female', activity_level: 'moderate', daily_calorie_target: 1900,
+  };
   let calls = 0;
   const handler = route('profile', async (text, values) => {
     calls++;
     assert.match(text, /INSERT INTO user_profile/);
     assert.match(text, /ON CONFLICT \(singleton\) DO UPDATE/);
-    assert.match(text, /RETURNING id, created_at, updated_at, height, height_unit, age, notes/);
+    assert.match(text, /RETURNING id, created_at, updated_at, height, height_unit, age, notes,/);
     assert.equal(values[0], saved.height);
-    assert.equal(values.length, 4);
+    assert.equal(values[4], saved.biological_sex);
+    assert.equal(values[5], saved.activity_level);
+    assert.equal(values[6], saved.daily_calorie_target);
+    assert.equal(values.length, 7);
     return [saved];
   });
   const response = await handler.POST(postRequest(saved));
@@ -152,11 +158,19 @@ test('profile save uses one atomic upsert and preserves its public response', as
 test('profile reads exclude the internal singleton column', async () => {
   const saved = { id: 'profile-id', height: 175 };
   const handler = route('profile', async (text) => {
-    assert.match(text, /SELECT id, created_at, updated_at, height, height_unit, age, notes/);
+    assert.match(text, /SELECT id, created_at, updated_at, height, height_unit, age, notes,/);
+    assert.match(text, /biological_sex, activity_level, daily_calorie_target/);
     assert.match(text, /WHERE singleton = TRUE/);
     return [saved];
   });
   assert.deepEqual(await (await handler.GET()).json(), { data: saved });
+});
+
+test('profile rejects invalid calorie-estimate settings before querying', async () => {
+  const handler = route('profile', async () => { throw new Error('Unexpected query'); });
+  assert.equal((await handler.POST(postRequest({ biological_sex: 'other' }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ activity_level: 'extreme' }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ daily_calorie_target: 0 }))).status, 400);
 });
 
 test('CSV imports retain successful rows and count invalid/database-failed rows', async () => {
@@ -342,6 +356,121 @@ test('nutrition entries reject negative values and invalid dates before querying
   assert.equal((await handler.POST(postRequest({ ...validEntry, date: '2026-02-30' }))).status, 400);
 });
 
+test('maintenance estimate uses Mifflin-St Jeor and the selected activity multiplier', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const { estimateMaintenanceFromFormula } = loadModule('lib/calorieEstimate.ts', {
+    '@/lib/weight': weight,
+  }).exports;
+  const estimate = estimateMaintenanceFromFormula({
+    age: 35,
+    height: 175,
+    height_unit: 'cm',
+    biological_sex: 'male',
+    activity_level: 'moderate',
+  }, [
+    { date: '2026-11-01', metric_type: 'weight', value: 80, unit: 'kg' },
+  ]);
+
+  assert.equal(estimate.caloriesKcal, 2672);
+  assert.equal(estimate.source, 'formula');
+  const olderWeightEstimate = estimateMaintenanceFromFormula({
+    age: 35,
+    height: 175,
+    height_unit: 'cm',
+    biological_sex: 'male',
+    activity_level: 'moderate',
+  }, [
+    { date: '2026-09-01', metric_type: 'weight', value: 80, unit: 'kg' },
+  ], new Date('2026-11-01T00:00:00Z'));
+  assert.equal(olderWeightEstimate.source, 'formula');
+  assert.equal(olderWeightEstimate.weightDate, '2026-09-01');
+});
+
+test('maintenance estimate calibrates after covered calorie and weight history exists', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const { estimateMaintenanceFromHistory, getMaintenanceEstimate } = loadModule('lib/calorieEstimate.ts', {
+    '@/lib/weight': weight,
+  }).exports;
+  const start = new Date('2026-10-18T00:00:00Z');
+  const nutrition = Array.from({ length: 15 }, (_, dayOffset) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + dayOffset);
+    return { date: date.toISOString().slice(0, 10), calories_kcal: 2200, protein_grams: 100, water_ml: 2000 };
+  });
+  const weights = [0, 3, 7, 10, 14].map((dayOffset) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + dayOffset);
+    return {
+      date: date.toISOString().slice(0, 10),
+      metric_type: 'weight',
+      value: 80 - dayOffset * 0.05,
+      unit: 'kg',
+    };
+  });
+  const calibrated = estimateMaintenanceFromHistory(nutrition, weights, new Date('2026-11-01T00:00:00Z'));
+
+  assert.equal(calibrated.caloriesKcal, 2585);
+  assert.equal(calibrated.source, 'logged_data');
+  assert.equal(calibrated.daysCovered, 15);
+  assert.equal(getMaintenanceEstimate({
+    age: 35,
+    height: 175,
+    height_unit: 'cm',
+    biological_sex: 'male',
+    activity_level: 'moderate',
+  }, nutrition, weights, new Date('2026-11-01T00:00:00Z')).source, 'logged_data');
+  assert.equal(estimateMaintenanceFromHistory(nutrition.slice(0, 9), weights, new Date('2026-11-01T00:00:00Z')), null);
+});
+
+test('seven-day nutrition average uses only recorded days and reports coverage', () => {
+  const { getSevenDayCalorieSummary } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+  }).exports;
+  const summary = getSevenDayCalorieSummary([
+    { date: '2026-10-30', calories_kcal: 2000, protein_grams: 100, water_ml: 2000 },
+    { date: '2026-10-31', calories_kcal: 2400, protein_grams: 100, water_ml: 2000 },
+    { date: '2026-10-20', calories_kcal: 900, protein_grams: 50, water_ml: 1000 },
+  ], new Date('2026-11-01T12:00:00Z'));
+
+  assert.equal(summary.averageIntakeKcal, 2200);
+  assert.equal(summary.daysLogged, 2);
+  assert.equal(summary.windowDays, 7);
+});
+
+test('seven-day weight trend compares daily averages and converts pounds to kilograms', () => {
+  const { getSevenDayWeightTrend } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+  }).exports;
+  const weights = [
+    { date: '2026-10-20', metric_type: 'weight', value: 180, unit: 'lbs' },
+    { date: '2026-10-22', metric_type: 'weight', value: 179, unit: 'lbs' },
+    { date: '2026-10-29', metric_type: 'weight', value: 80, unit: 'kg' },
+    { date: '2026-10-31', metric_type: 'weight', value: 79.5, unit: 'kg' },
+  ];
+  const trend = getSevenDayWeightTrend(weights, new Date('2026-11-01T12:00:00Z'));
+
+  assert.equal(trend.currentAverageKg, 79.75);
+  assert.equal(trend.previousDaysLogged, 2);
+  assert.equal(trend.currentDaysLogged, 2);
+  assert.ok(trend.differenceKg < 0);
+});
+
+test('summary colors distinguish calorie balance and contextualize weight direction', () => {
+  const { getCalorieBalanceTone, getWeightTrendTone } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+  }).exports;
+
+  assert.equal(getCalorieBalanceTone(300), 'green');
+  assert.equal(getCalorieBalanceTone(0), 'blue');
+  assert.equal(getCalorieBalanceTone(-200), 'yellow');
+  assert.equal(getCalorieBalanceTone(-400), 'red');
+  assert.equal(getCalorieBalanceTone(700), 'yellow');
+  assert.equal(getWeightTrendTone(0.3, 0.2), 'green');
+  assert.equal(getWeightTrendTone(0.3, 0.8), 'red');
+  assert.equal(getWeightTrendTone(-0.3, 0.8), 'green');
+  assert.equal(getWeightTrendTone(-0.3, null), 'blue');
+});
+
 test('daily stress summaries average multiple readings without filling missing dates', () => {
   const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
   const summaries = aggregateDailyStress([
@@ -448,7 +577,10 @@ test('real PostgreSQL preserves schema contracts and concurrent saves keep one p
   const profile = route('profile', query);
   assert.deepEqual(await (await profile.GET()).json(), { data: null });
   const responses = await Promise.all([170, 175, 180].map((height) =>
-    profile.POST(postRequest({ height, height_unit: 'cm', age: 35 })),
+    profile.POST(postRequest({
+      height, height_unit: 'cm', age: 35,
+      biological_sex: 'female', activity_level: 'moderate', daily_calorie_target: 1900,
+    })),
   ));
   const saved = await Promise.all(responses.map((response) => response.json()));
   assert.equal(responses.every((response) => response.status === 200), true);
@@ -456,6 +588,9 @@ test('real PostgreSQL preserves schema contracts and concurrent saves keep one p
   const rows = await query('SELECT * FROM user_profile');
   assert.equal(rows.length, 1);
   assert.equal(typeof rows[0].height, 'number');
+  assert.equal(rows[0].biological_sex, 'female');
+  assert.equal(rows[0].activity_level, 'moderate');
+  assert.equal(rows[0].daily_calorie_target, 1900);
   const publicProfile = await (await profile.GET()).json();
   assert.equal(Object.hasOwn(publicProfile.data, 'singleton'), false);
   assert.equal(typeof publicProfile.data.created_at, 'string');

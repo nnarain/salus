@@ -39,6 +39,9 @@ export interface UserProfile {
   height?: number;
   height_unit?: 'cm' | 'inches' | 'feet';
   age?: number;
+  biological_sex?: 'male' | 'female';
+  activity_level?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+  daily_calorie_target?: number;
   notes?: string;
 }
 

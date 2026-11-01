@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
 import UserProfileForm from '@/components/UserProfileForm';
@@ -20,6 +20,21 @@ import WeeklyStressChart from '@/components/WeeklyStressChart';
 import SleepDurationChart from '@/components/SleepDurationChart';
 import type { ActivityEntry, BiometricEntry, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
+import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
+import {
+  getCalorieBalanceTone,
+  getSevenDayCalorieSummary,
+  getSevenDayWeightTrend,
+  getWeightTrendTone,
+} from '@/lib/dashboardMetrics';
+import { calculateHealthRiskIndicator } from '@/lib/healthRisk';
+
+const SUMMARY_TONE_STYLES = {
+  green: { description: 'text-xs text-green-700 dark:text-green-400 mt-1', border: 'border-green-200 dark:border-green-700' },
+  blue: { description: 'text-xs text-gray-500 dark:text-gray-400 mt-1', border: 'border-blue-200 dark:border-blue-700' },
+  yellow: { description: 'text-xs text-amber-700 dark:text-amber-400 mt-1', border: 'border-yellow-200 dark:border-yellow-700' },
+  red: { description: 'text-xs text-red-700 dark:text-red-400 mt-1', border: 'border-red-200 dark:border-red-700' },
+};
 
 // Helper function to determine waist-to-height ratio border color
 function getWaistHeightBorderColor(ratio: number | null): string {
@@ -46,6 +61,7 @@ function getBodyFatBorderColor(percentage: number | null): string {
 }
 
 export default function Home() {
+  const [dashboardView, setDashboardView] = useState<'data' | 'insights'>('data');
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -56,6 +72,7 @@ export default function Home() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
   const [isBodyFatInfoModalOpen, setIsBodyFatInfoModalOpen] = useState(false);
+  const [isCalorieEstimateInfoModalOpen, setIsCalorieEstimateInfoModalOpen] = useState(false);
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
@@ -69,6 +86,51 @@ export default function Home() {
   const [defaultChartRangeYears, setDefaultChartRangeYears] = useState<number | 'all'>(2);
   const [activeChartRangeYears, setActiveChartRangeYears] = useState<number | 'all'>(2);
   const [weightDisplayUnit, setWeightDisplayUnit] = useState<'kg' | 'lbs'>('kg');
+  const calorieEstimate = useMemo(() => getMaintenanceEstimate(profile ?? {}, nutritionEntries ?? [], biometrics),
+    [profile, nutritionEntries, biometrics]);
+  const sevenDayCalories = useMemo(() => getSevenDayCalorieSummary(nutritionEntries ?? []), [nutritionEntries]);
+  const sevenDayWeightTrend = useMemo(() => getSevenDayWeightTrend(biometrics), [biometrics]);
+  const currentHealthRisk = calculateHealthRiskIndicator(
+    bodyFatPercentage ?? undefined,
+    waistHeightRatio ?? undefined,
+  );
+  const hasWeightRecord = biometrics.some((entry) => entry.metric_type === 'weight');
+  const missingCalorieInputs = [
+    profile?.age === undefined ? 'age' : profile.age < 18 ? 'adult age' : null,
+    !profile?.height || !profile.height_unit ? 'height' : null,
+    !profile?.biological_sex ? 'formula coefficient' : null,
+    !profile?.activity_level ? 'activity level' : null,
+    !hasWeightRecord ? 'weight entry' : null,
+  ].filter((input): input is string => input !== null);
+  const calorieEstimateUnavailableDescription = profile?.age !== undefined && profile.age < 18
+    ? 'An adult formula estimate is not applied under age 18.'
+    : missingCalorieInputs.length > 0
+      ? `Set ${missingCalorieInputs.join(', ')} in User Settings to calculate a formula estimate.`
+      : 'Keep logging calories and weight to build a trend estimate.';
+  const estimatedDailyBalance = calorieEstimate && sevenDayCalories.daysLogged >= 5 && sevenDayCalories.averageIntakeKcal !== undefined
+    ? calorieEstimate.caloriesKcal - sevenDayCalories.averageIntakeKcal
+    : null;
+  const calorieBalanceDescription = sevenDayCalories.daysLogged === 0
+    ? 'No calorie entries in the last 7 days'
+    : sevenDayCalories.daysLogged < 5
+      ? `${sevenDayCalories.daysLogged}/7 days logged · need at least 5 days to estimate balance`
+      : estimatedDailyBalance === null
+        ? `${sevenDayCalories.daysLogged}/7 days logged · maintenance estimate unavailable`
+        : `${estimatedDailyBalance > 0 ? `Estimated deficit ~${estimatedDailyBalance}` : estimatedDailyBalance < 0 ? `Estimated surplus ~${Math.abs(estimatedDailyBalance)}` : 'At estimated maintenance'} kcal/day · ${sevenDayCalories.daysLogged}/7 days logged${profile?.daily_calorie_target ? ` · target ${profile.daily_calorie_target} kcal/day` : ''}`;
+  const calorieBalanceTone = getCalorieBalanceTone(estimatedDailyBalance);
+  const weightTrendTone = getWeightTrendTone(sevenDayWeightTrend.differenceKg, currentHealthRisk);
+  const riskContext = currentHealthRisk === null
+    ? 'health risk context unavailable'
+    : currentHealthRisk < 0.33
+      ? 'low-risk context'
+      : currentHealthRisk < 0.67
+        ? 'moderate-risk context'
+        : 'higher-risk context';
+  const weightTrendDescription = sevenDayWeightTrend.differenceKg === undefined
+    ? `Weigh-ins: ${sevenDayWeightTrend.currentDaysLogged}/7 this week, ${sevenDayWeightTrend.previousDaysLogged}/7 last week · need 2 days in each`
+    : `${sevenDayWeightTrend.differenceKg < 0 ? 'Down' : sevenDayWeightTrend.differenceKg > 0 ? 'Up' : 'Unchanged'} ${Math.abs(weightDisplayUnit === 'lbs'
+      ? kilogramsToPounds(sevenDayWeightTrend.differenceKg)
+      : sevenDayWeightTrend.differenceKg).toFixed(1)} ${weightDisplayUnit} vs prior week · ${riskContext} · ${sevenDayWeightTrend.currentDaysLogged}/7 weigh-in days${currentHealthRisk !== null && currentHealthRisk < 0.33 && sevenDayWeightTrend.differenceKg > 0 ? ' · weight alone cannot confirm muscle gain' : ''}`;
 
   // Fetch biometrics and profile data
   const fetchData = async () => {
@@ -261,8 +323,8 @@ export default function Home() {
           <button
             onClick={() => setIsProfileModalOpen(true)}
             className="bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg hover:shadow-xl transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
-            aria-label="User Settings"
-            title="User Settings (Height & Age)"
+            aria-label="Personal Settings"
+            title="Personal Settings"
           >
             <svg
               className="w-6 h-6 text-gray-700 dark:text-gray-300"
@@ -365,6 +427,57 @@ export default function Home() {
               </svg>
             }
           />
+          <StatCard
+            title="Estimated Maintenance (TDEE)"
+            value={calorieEstimate ? calorieEstimate.caloriesKcal.toLocaleString() : 'N/A'}
+            unit={calorieEstimate ? 'kcal/day' : undefined}
+            description={calorieEstimate
+              ? calorieEstimate.source === 'logged_data'
+                ? `Trend estimate · ${calorieEstimate.daysCovered} days of data`
+                : `Formula estimate · latest weight ${calorieEstimate.weightDate
+                  ? new Date(`${calorieEstimate.weightDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                  : 'recorded'}`
+              : calorieEstimateUnavailableDescription}
+            loading={loading}
+            onInfoClick={() => setIsCalorieEstimateInfoModalOpen(true)}
+            icon={
+              <svg className="h-6 w-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2m6.36.64-1.42 1.42M21 12h-2m-.64 6.36-1.42-1.42M12 21v-2m-6.36-.64 1.42-1.42M3 12h2m.64-6.36 1.42 1.42M8 16h8l-1.1-1.65a5 5 0 10-5.8 0L8 16zm1 2h6m-5 2h4" />
+              </svg>
+            }
+          />
+          <StatCard
+            title="Average Calories (7 Days)"
+            value={sevenDayCalories.averageIntakeKcal?.toLocaleString() ?? 'N/A'}
+            unit={sevenDayCalories.averageIntakeKcal !== undefined ? 'kcal/day' : undefined}
+            description={calorieBalanceDescription}
+            descriptionColor={SUMMARY_TONE_STYLES[calorieBalanceTone].description}
+            borderColor={SUMMARY_TONE_STYLES[calorieBalanceTone].border}
+            loading={loading}
+            icon={
+              <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m0 14h16M7 15l3-4 3 2 5-7" />
+              </svg>
+            }
+          />
+          <StatCard
+            title="Weight Trend (7-Day Avg)"
+            value={sevenDayWeightTrend.currentAverageKg !== undefined
+              ? (weightDisplayUnit === 'lbs'
+                ? kilogramsToPounds(sevenDayWeightTrend.currentAverageKg)
+                : sevenDayWeightTrend.currentAverageKg).toFixed(1)
+              : 'N/A'}
+            unit={sevenDayWeightTrend.currentAverageKg !== undefined ? weightDisplayUnit : undefined}
+            description={weightTrendDescription}
+            descriptionColor={SUMMARY_TONE_STYLES[weightTrendTone].description}
+            borderColor={SUMMARY_TONE_STYLES[weightTrendTone].border}
+            loading={loading}
+            icon={
+              <svg className="h-6 w-6 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m0 14h16M7 15l4-4 3 3 5-7" />
+              </svg>
+            }
+          />
         </div>
 
         {/* Action Buttons for Forms */}
@@ -463,10 +576,10 @@ export default function Home() {
         </Modal>
 
         <Modal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-          title="User Settings"
-        >
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            title="Personal Settings"
+          >
           <UserProfileForm
             chartRangeYears={defaultChartRangeYears}
             onChartRangeChange={handleDefaultChartRangeChange}
@@ -529,43 +642,143 @@ export default function Home() {
           onClose={() => setIsBodyFatInfoModalOpen(false)}
         />
 
+        <Modal
+          isOpen={isCalorieEstimateInfoModalOpen}
+          onClose={() => setIsCalorieEstimateInfoModalOpen(false)}
+          title="Estimated Daily Energy Expenditure"
+        >
+          <div className="space-y-5 text-sm text-gray-700 dark:text-gray-300">
+            <section>
+              <h3 className="mb-2 font-semibold text-gray-900 dark:text-white">Initial formula estimate</h3>
+              <p>
+                Basal metabolic rate (BMR) uses the Mifflin–St Jeor formula, then multiplies by the selected activity level to estimate total daily energy expenditure (TDEE).
+              </p>
+              <p className="mt-2 rounded-md bg-gray-50 p-3 font-mono text-xs dark:bg-gray-700/50">
+                BMR = 10 × weight (kg) + 6.25 × height (cm) − 5 × age + formula adjustment (+5 or −161)
+              </p>
+              <ul className="mt-2 grid grid-cols-2 gap-1 text-xs">
+                <li>Sedentary: 1.2</li>
+                <li>Light: 1.375</li>
+                <li>Moderate: 1.55</li>
+                <li>Active: 1.725</li>
+                <li>Very active: 1.9</li>
+              </ul>
+            </section>
+            <section>
+              <h3 className="mb-2 font-semibold text-gray-900 dark:text-white">Estimate from your logged data</h3>
+              <p>
+                After at least 14 days with calorie intake logged on 70% of days and four or more weigh-ins spanning at least 14 days, Salus estimates maintenance from average intake and the weight trend. It uses an approximate 7,700 kcal per kilogram conversion, so short-term water changes and incomplete logging can affect it.
+              </p>
+            </section>
+            <p className="rounded-md bg-gray-50 p-3 text-xs dark:bg-gray-700/50">
+              Both methods are estimates, not measurements or medical advice. Your daily calorie target is a separate setting and does not change the maintenance estimate.
+            </p>
+          </div>
+        </Modal>
+
         {/* Health Metrics Chart */}
-        <HealthMetricsChart
-          biometrics={biometrics}
-          profile={profile}
-          rangeYears={activeChartRangeYears}
-          onRangeChange={setActiveChartRangeYears}
-          weightDisplayUnit={weightDisplayUnit}
-        />
-        <div className="mt-6">
-          <NutritionChart
-            entries={nutritionEntries}
-            rangeYears={activeChartRangeYears}
-            loading={loading}
-          />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="inline-flex rounded-lg border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-gray-800" role="group" aria-label="Dashboard view">
+            <button
+              type="button"
+              aria-pressed={dashboardView === 'data'}
+              onClick={() => setDashboardView('data')}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${dashboardView === 'data'
+                ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white'
+                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60'}`}
+            >
+              Data
+            </button>
+            <button
+              type="button"
+              aria-pressed={dashboardView === 'insights'}
+              onClick={() => setDashboardView('insights')}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${dashboardView === 'insights'
+                ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white'
+                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60'}`}
+            >
+              Insights
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label htmlFor="dashboard-range" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Date range
+            </label>
+            <select
+              id="dashboard-range"
+              value={activeChartRangeYears}
+              onChange={(event) => setActiveChartRangeYears(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            >
+              <option value={1}>Last year</option>
+              <option value={2}>Last 2 years</option>
+              <option value={5}>Last 5 years</option>
+              <option value="all">All available data</option>
+            </select>
+          </div>
         </div>
-        <div className="mt-6">
-          <WeeklyActivityChart
-            activities={activities}
-            rangeYears={activeChartRangeYears}
-            loading={loading}
-          />
-        </div>
-        <div className="mt-6">
-          <WeeklyStressChart
-            entries={stressEntries}
-            rangeYears={activeChartRangeYears}
-            loading={loading}
-          />
-        </div>
-        <div className="mt-6">
-          <SleepDurationChart
-            entries={sleepEntries}
-            rangeYears={activeChartRangeYears}
-            age={profile?.age}
-            loading={loading}
-          />
-        </div>
+
+        {dashboardView === 'data' ? (
+          <>
+            <HealthMetricsChart
+              biometrics={biometrics}
+              profile={profile}
+              rangeYears={activeChartRangeYears}
+              weightDisplayUnit={weightDisplayUnit}
+            />
+            <div className="mt-6">
+              <NutritionChart
+                entries={nutritionEntries}
+                rangeYears={activeChartRangeYears}
+                loading={loading}
+                maintenanceEstimate={calorieEstimate}
+                dailyCalorieTarget={profile?.daily_calorie_target}
+              />
+            </div>
+            <div className="mt-6">
+              <WeeklyActivityChart activities={activities} rangeYears={activeChartRangeYears} loading={loading} />
+            </div>
+            <div className="mt-6">
+              <WeeklyStressChart entries={stressEntries} rangeYears={activeChartRangeYears} loading={loading} />
+            </div>
+            <div className="mt-6">
+              <SleepDurationChart entries={sleepEntries} rangeYears={activeChartRangeYears} age={profile?.age} loading={loading} />
+            </div>
+          </>
+        ) : (
+          <section className="rounded-lg bg-white p-8 shadow-lg dark:bg-gray-800">
+            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Sleep &amp; stress patterns</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Cross-metric trend · {activeChartRangeYears === 'all' ? 'All available data' : `Last ${activeChartRangeYears} ${activeChartRangeYears === 1 ? 'year' : 'years'}`}
+                </p>
+              </div>
+            </div>
+            <div className="relative h-[360px] overflow-hidden rounded-md border border-gray-200 dark:border-gray-700" aria-label="Sleep and stress insight plot placeholder">
+              <div className="absolute inset-0 grid grid-rows-4">
+                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
+                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
+                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
+                <div />
+              </div>
+              <div className="absolute inset-0 grid grid-cols-6">
+                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
+                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
+                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
+                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
+                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
+                <div />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="rounded-md bg-white/80 px-4 py-2 text-sm text-gray-500 backdrop-blur dark:bg-gray-800/80 dark:text-gray-400">
+                  No combined sleep and stress insight yet
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Footer */}
         <div className="text-center mt-12">

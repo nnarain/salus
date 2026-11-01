@@ -258,7 +258,9 @@ function SleepDurationChart({ entries, rangeYears, age, loading }: SleepDuration
             stroke="transparent"
             strokeWidth={0}
             connectNulls={false}
-            dot={(props) => <SleepDurationDot {...props} targetBand={targetBand} />}
+            dot={({ key, ...dotProps }) => (
+              <SleepDurationDot key={key} {...dotProps} targetBand={targetBand} />
+            )}
             activeDot={{ r: 6 }}
           />
           <Line

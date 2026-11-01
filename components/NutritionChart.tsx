@@ -5,17 +5,21 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import type { NutritionEntry } from '@/lib/types';
+import type { CalorieEstimate } from '@/lib/calorieEstimate';
 
 interface NutritionChartProps {
   entries: NutritionEntry[] | null;
   rangeYears: number | 'all';
   loading: boolean;
+  maintenanceEstimate: CalorieEstimate | null;
+  dailyCalorieTarget?: number;
 }
 
 type NutritionMetric = 'calories_kcal' | 'protein_grams' | 'water_liters';
@@ -63,9 +67,10 @@ function createSampleEntries(rangeYears: number | 'all'): NutritionEntry[] {
   });
 }
 
-function NutritionChart({ entries, rangeYears, loading }: NutritionChartProps) {
+function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dailyCalorieTarget }: NutritionChartProps) {
   const [selectedMetric, setSelectedMetric] = useState<NutritionMetric>('calories_kcal');
   const metric = METRICS[selectedMetric];
+  const showCalorieTargetLine = dailyCalorieTarget !== undefined && dailyCalorieTarget !== maintenanceEstimate?.caloriesKcal;
 
   const { chartData, hasSampleData } = useMemo(() => {
     if (!entries) return { chartData: [], hasSampleData: false };
@@ -167,6 +172,38 @@ function NutritionChart({ entries, rangeYears, loading }: NutritionChartProps) {
         ))}
       </div>
 
+      {selectedMetric === 'calories_kcal' && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
+          {hasSampleData ? (
+            <span>Estimate and target lines appear with recorded nutrition data.</span>
+          ) : (
+            <>
+              {maintenanceEstimate ? (
+                <>
+                  <span>Estimated maintenance: <strong>{maintenanceEstimate.caloriesKcal.toLocaleString()} kcal</strong></span>
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="w-5 border-t-2 border-dashed border-slate-400" />
+                    {maintenanceEstimate.source === 'logged_data'
+                      ? `Trend estimate · ${maintenanceEstimate.daysCovered} days`
+                      : 'Formula estimate'}
+                  </span>
+                </>
+              ) : (
+                <span>Estimated maintenance: not available</span>
+              )}
+              <span>
+                Daily target: <strong>{dailyCalorieTarget ? `${dailyCalorieTarget.toLocaleString()} kcal` : 'Not set'}</strong>
+              </span>
+              {showCalorieTargetLine && (
+                <span className="flex items-center gap-2 text-xs">
+                  <span className="w-5 border-t-2 border-dashed border-orange-500" />Your target
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <ResponsiveContainer width="100%" height={340}>
         <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 8, left: 8 }} barCategoryGap={1}>
           <CartesianGrid strokeDasharray="3 3" />
@@ -186,6 +223,22 @@ function NutritionChart({ entries, rangeYears, loading }: NutritionChartProps) {
             labelFormatter={(label) => formatDate(String(label))}
             formatter={(value) => [`${Number(value).toLocaleString()} ${metric.unit}`, metric.label]}
           />
+          {selectedMetric === 'calories_kcal' && !hasSampleData && maintenanceEstimate && (
+            <ReferenceLine
+              y={maintenanceEstimate.caloriesKcal}
+              stroke="#94a3b8"
+              strokeDasharray="6 4"
+              ifOverflow="extendDomain"
+            />
+          )}
+          {selectedMetric === 'calories_kcal' && !hasSampleData && showCalorieTargetLine && (
+            <ReferenceLine
+              y={dailyCalorieTarget}
+              stroke="#f97316"
+              strokeDasharray="6 4"
+              ifOverflow="extendDomain"
+            />
+          )}
           <Bar dataKey="value" name={metric.label} fill={metric.color} maxBarSize={12} />
         </BarChart>
       </ResponsiveContainer>

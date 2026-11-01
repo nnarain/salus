@@ -8,6 +8,7 @@ interface StatCardProps {
   loading?: boolean;
   onInfoClick?: () => void;
   borderColor?: string;
+  descriptionColor?: string;
 }
 
 export default function StatCard({
@@ -19,6 +20,7 @@ export default function StatCard({
   loading = false,
   onInfoClick,
   borderColor = 'border-blue-200 dark:border-blue-700',
+  descriptionColor = 'text-xs text-gray-500 dark:text-gray-400 mt-1',
 }: StatCardProps) {
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 ${borderColor} hover:shadow-xl transition-all`}>
@@ -69,7 +71,7 @@ export default function StatCard({
                 )}
               </div>
               {description && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className={descriptionColor}>
                   {description}
                 </p>
               )}

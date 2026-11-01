@@ -31,6 +31,30 @@
         "/^node --test --test-name-pattern='nutrition entries save daily totals\\|nutrition entries reject negative' tests/database\\.test\\.cjs$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='profile save uses one atomic\\|profile reads exclude\\|profile rejects invalid calorie-estimate' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='maintenance estimate uses Mifflin\\|maintenance estimate calibrates' tests/database\\.test\\.cjs && npx eslint lib/calorieEstimate\\.ts components/NutritionChart\\.tsx && npx tsc --noEmit --pretty false$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='maintenance estimate uses Mifflin' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='seven-day nutrition average\\|seven-day weight trend' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='summary colors distinguish calorie balance' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='maintenance estimate uses Mifflin' tests/database\\.test\\.cjs && npx eslint app/page\\.tsx lib/calorieEstimate\\.ts tests/database\\.test\\.cjs && npx tsc --noEmit --pretty false$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

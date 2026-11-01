@@ -10,7 +10,6 @@ interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
   profile: UserProfile | null;
   rangeYears: number | 'all';
-  onRangeChange: (range: number | 'all') => void;
   weightDisplayUnit: 'kg' | 'lbs';
 }
 
@@ -271,7 +270,6 @@ function HealthMetricsChart({
   biometrics,
   profile,
   rangeYears,
-  onRangeChange,
   weightDisplayUnit,
 }: HealthMetricsChartProps) {
   const cutoffDate = new Date();
@@ -293,29 +291,9 @@ function HealthMetricsChart({
   const rangeLabel = rangeYears === 'all'
     ? 'All available data'
     : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`;
-  const rangeSelector = (
-    <div className="flex items-center gap-3">
-      <label htmlFor="chart-range-view" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-        Date range
-      </label>
-      <select
-        id="chart-range-view"
-        value={rangeYears}
-        onChange={(event) => onRangeChange(event.target.value === 'all' ? 'all' : Number(event.target.value))}
-        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-      >
-        <option value={1}>Last year</option>
-        <option value={2}>Last 2 years</option>
-        <option value={5}>Last 5 years</option>
-        <option value="all">All available data</option>
-      </select>
-    </div>
-  );
-
   if (chartData.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="flex justify-end">{rangeSelector}</div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
           <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Health Risk Indicator</h2>
@@ -335,7 +313,6 @@ function HealthMetricsChart({
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">{rangeSelector}</div>
       {/* Normalized Health Risk Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
