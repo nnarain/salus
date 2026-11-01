@@ -31,6 +31,8 @@ This document describes the expected CSV format for importing biometric, activit
 | `waistline` | `cm`, `inches` |
 | `body_fat_percentage` | `%` |
 
+Weight values submitted in `lbs` are converted to kilograms when stored.
+
 ### Example CSV
 
 ```csv

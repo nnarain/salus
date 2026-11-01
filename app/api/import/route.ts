@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { normalizeWeightToKilograms } from '@/lib/weight';
 
 interface ImportRequest {
   dataType: 'biometric' | 'activity' | 'stress';
@@ -44,7 +45,8 @@ function validateBiometricRecord(record: Record<string, string>): boolean {
     record.metric_type &&
     record.value &&
     record.unit &&
-    !isNaN(parseFloat(record.value))
+    !isNaN(parseFloat(record.value)) &&
+    (record.metric_type !== 'weight' || normalizeWeightToKilograms(parseFloat(record.value), record.unit) !== null)
   );
 }
 
@@ -104,8 +106,11 @@ export async function POST(request: Request) {
           await query(
             `INSERT INTO biometrics (date, metric_type, value, unit, notes)
              VALUES ($1, $2, $3, $4, $5)`,
-            [record.date, record.metric_type, parseFloat(record.value),
-              record.unit, record.notes || null],
+            [record.date, record.metric_type,
+              record.metric_type === 'weight'
+                ? normalizeWeightToKilograms(parseFloat(record.value), record.unit)
+                : parseFloat(record.value),
+              record.metric_type === 'weight' ? 'kg' : record.unit, record.notes || null],
           );
           result.imported++;
         } else if (dataType === 'activity') {

@@ -5,9 +5,19 @@ import type { UserProfile } from '@/lib/types';
 
 interface UserProfileFormProps {
   onSuccess?: () => void;
+  chartRangeYears: number | 'all';
+  onChartRangeChange: (range: number | 'all') => void;
+  weightDisplayUnit: 'kg' | 'lbs';
+  onWeightDisplayUnitChange: (unit: 'kg' | 'lbs') => void;
 }
 
-export default function UserProfileForm({ onSuccess }: UserProfileFormProps = {}) {
+export default function UserProfileForm({
+  chartRangeYears,
+  onChartRangeChange,
+  weightDisplayUnit,
+  onWeightDisplayUnitChange,
+  onSuccess,
+}: UserProfileFormProps) {
   const [formData, setFormData] = useState({
     height: '',
     height_unit: 'cm',
@@ -104,6 +114,8 @@ export default function UserProfileForm({ onSuccess }: UserProfileFormProps = {}
 
   return (
     <div>
+      <section className="mb-6 border-b border-gray-200 pb-6 dark:border-gray-700">
+        <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">About you</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Height Input */}
         <div className="grid grid-cols-2 gap-4">
@@ -198,6 +210,47 @@ export default function UserProfileForm({ onSuccess }: UserProfileFormProps = {}
           </div>
         )}
       </form>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Chart date range</h3>
+        <label htmlFor="chart-range" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Show measurements from
+        </label>
+        <select
+          id="chart-range"
+          value={chartRangeYears}
+          onChange={(event) => onChartRangeChange(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+          className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+        >
+          <option value={1}>Last year</option>
+          <option value={2}>Last 2 years</option>
+          <option value={5}>Last 5 years</option>
+          <option value="all">All available data</option>
+        </select>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          Applies to all charts. Your full history remains saved.
+        </p>
+      </section>
+
+      <section className="mt-6 border-t border-gray-200 pt-6 dark:border-gray-700">
+        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Display preferences</h3>
+        <label htmlFor="weight-display-unit" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Weight on the summary card
+        </label>
+        <select
+          id="weight-display-unit"
+          value={weightDisplayUnit}
+          onChange={(event) => onWeightDisplayUnitChange(event.target.value as 'kg' | 'lbs')}
+          className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+        >
+          <option value="kg">Kilograms (kg)</option>
+          <option value="lbs">Pounds (lbs)</option>
+        </select>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          Weight measurements are stored in kilograms. This changes only the summary card display.
+        </p>
+      </section>
     </div>
   );
 }

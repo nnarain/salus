@@ -2,11 +2,15 @@
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, AreaChart, Area, ComposedChart } from 'recharts';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
+import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
 
 interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
   profile: UserProfile | null;
+  rangeYears: number | 'all';
+  onRangeChange: (range: number | 'all') => void;
+  weightDisplayUnit: 'kg' | 'lbs';
 }
 
 interface ChartDataPoint {
@@ -31,6 +35,7 @@ interface TooltipPayloadItem {
 interface CustomTooltipProps {
   active?: boolean;
   payload?: TooltipPayloadItem[];
+  weightDisplayUnit: 'kg' | 'lbs';
 }
 
 // Health range thresholds
@@ -65,7 +70,7 @@ const getBodyFatColor = (percentage: number): string => {
 };
 
 // Custom tooltip to show color-coded insights
-const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
+const CustomTooltip = ({ active, payload, weightDisplayUnit }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
@@ -116,8 +121,8 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
 
           return (
             <p key={index} style={{ color }} className="text-sm">
-              {entry.name}: {entry.value.toFixed(3)}
-              {entry.dataKey === 'weight' && ' kg'}
+              {entry.name}: {entry.dataKey === 'weight' ? entry.value.toFixed(1) : entry.value.toFixed(3)}
+              {entry.dataKey === 'weight' && ` ${weightDisplayUnit}`}
               {entry.dataKey === 'bodyFatPercentage' && '%'}
               {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
               <span className="font-semibold">{insight}</span>
@@ -193,7 +198,7 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
       // Convert to kg for consistency
       let weightInKg = entry.value;
       if (entry.unit === 'lbs') {
-        weightInKg = entry.value * 0.453592;
+        weightInKg = poundsToKilograms(entry.value);
       }
       dataPoint.weight = Number(weightInKg.toFixed(1));
     } else if (entry.metric_type === 'waistline' && profile?.height) {
@@ -265,19 +270,62 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
   return chartData;
 };
 
-export default function HealthMetricsChart({ biometrics, profile }: HealthMetricsChartProps) {
-  const chartData = processChartData(biometrics, profile);
+export default function HealthMetricsChart({
+  biometrics,
+  profile,
+  rangeYears,
+  onRangeChange,
+  weightDisplayUnit,
+}: HealthMetricsChartProps) {
+  const cutoffDate = new Date();
+  if (rangeYears !== 'all') {
+    cutoffDate.setFullYear(cutoffDate.getFullYear() - rangeYears);
+  }
+  const visibleBiometrics = rangeYears === 'all'
+    ? biometrics
+    : biometrics.filter((entry) => new Date(entry.date) >= cutoffDate);
+  const chartData = processChartData(visibleBiometrics, profile);
+  const weightChartData = weightDisplayUnit === 'lbs'
+    ? chartData.map((point) => point.weight === undefined
+      ? point
+      : { ...point, weight: Number(kilogramsToPounds(point.weight).toFixed(1)) })
+    : chartData;
+  const rangeLabel = rangeYears === 'all'
+    ? 'All available data'
+    : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`;
+  const rangeSelector = (
+    <div className="flex items-center gap-3">
+      <label htmlFor="chart-range-view" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        Date range
+      </label>
+      <select
+        id="chart-range-view"
+        value={rangeYears}
+        onChange={(event) => onRangeChange(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+      >
+        <option value={1}>Last year</option>
+        <option value={2}>Last 2 years</option>
+        <option value={5}>Last 5 years</option>
+        <option value="all">All available data</option>
+      </select>
+    </div>
+  );
 
   if (chartData.length === 0) {
     return (
       <div className="space-y-6">
+        <div className="flex justify-end">{rangeSelector}</div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Weight & Health Risk Indicator
-          </h2>
+          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Health Risk Indicator</h2>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+          </div>
           <div className="text-center py-12">
             <p className="text-gray-600 dark:text-gray-400 text-lg">
-              No data available yet. Start adding biometric measurements to see your progress!
+              {biometrics.length > 0
+                ? 'No measurements in this date range. Choose a longer range above.'
+                : 'No data available yet. Start adding biometric measurements to see your progress!'}
             </p>
           </div>
         </div>
@@ -287,11 +335,13 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">{rangeSelector}</div>
       {/* Normalized Health Risk Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          Health Risk Metrics (Normalized)
-        </h2>
+        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Health Risk Metrics (Normalized)</h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+        </div>
         <div className="mb-4">
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-2">
@@ -330,7 +380,7 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
                 return value.toFixed(1);
               }}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
             <Legend />
             {/* Reference lines for risk levels */}
             <ReferenceArea y1={0} y2={0.33} fill="rgba(34, 197, 94, 0.1)" fillOpacity={1} />
@@ -371,14 +421,15 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
 
       {/* Weight and Health Risk Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          Weight & Health Risk Indicator
-        </h2>
+        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Health Risk Indicator</h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+        </div>
         <div className="mb-4">
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8b5cf6' }}></div>
-              <span>Weight (kg)</span>
+              <span>Weight ({weightDisplayUnit})</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', border: '1px solid rgba(34, 197, 94, 0.5)' }}></div>
@@ -398,7 +449,7 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
           </div>
         </div>
         <ResponsiveContainer width="100%" height={400}>
-          <LineChart data={chartData}>
+          <LineChart data={weightChartData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
               dataKey="date" 
@@ -407,8 +458,8 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
               textAnchor="end"
               height={80}
             />
-            <YAxis />
-            <Tooltip content={<CustomTooltip />} />
+            <YAxis label={{ value: `Weight (${weightDisplayUnit})`, angle: -90, position: 'insideLeft' }} />
+            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
             <Legend />
             {/* Render risk zones as colored overlays */}
             {generateRiskZones(chartData).map((zone, index) => {
@@ -442,9 +493,10 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
 
       {/* Body Composition Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          Body Composition Metrics
-        </h2>
+        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Body Composition Metrics</h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+        </div>
         <div className="mb-4">
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-2">
@@ -472,7 +524,7 @@ export default function HealthMetricsChart({ biometrics, profile }: HealthMetric
               height={80}
             />
             <YAxis />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
             <Legend />
             <Line 
               type="monotone" 

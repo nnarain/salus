@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { normalizeWeightToKilograms } from '@/lib/weight';
 import type { BiometricEntry } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -22,10 +23,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const isWeight = body.metric_type === 'weight';
+    const value = isWeight
+      ? normalizeWeightToKilograms(body.value, body.unit)
+      : body.value;
+    if (value === null) {
+      return NextResponse.json(
+        { error: 'Weight unit must be kg or lbs' },
+        { status: 400 }
+      );
+    }
+
     const data = await query<BiometricEntry>(
       `INSERT INTO biometrics (date, metric_type, value, unit, notes)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [body.date, body.metric_type, body.value, body.unit, body.notes || null],
+      [body.date, body.metric_type, value, isWeight ? 'kg' : body.unit, body.notes || null],
     );
 
     return NextResponse.json(

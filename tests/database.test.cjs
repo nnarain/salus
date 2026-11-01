@@ -27,7 +27,11 @@ function loadModule(file, overrides = {}, environment = {}) {
 }
 
 function route(name, query) {
-  return loadModule(`app/api/${name}/route.ts`, { '@/lib/db': { query } }).exports;
+  const weight = loadModule('lib/weight.ts').exports;
+  return loadModule(`app/api/${name}/route.ts`, {
+    '@/lib/db': { query },
+    '@/lib/weight': weight,
+  }).exports;
 }
 
 function postRequest(body) {
@@ -173,6 +177,42 @@ test('CSV imports retain successful rows and count invalid/database-failed rows'
   assert.equal(result.skipped, 2);
   assert.equal(result.errors.length, 2);
   assert.equal(JSON.stringify(result).includes('private database details'), false);
+});
+
+test('weight API entries normalize pounds to kilograms before storage', async () => {
+  let inserted;
+  const handler = route('biometrics', async (_text, values) => {
+    inserted = values;
+    return [{ date: values[0], metric_type: values[1], value: values[2], unit: values[3] }];
+  });
+  const response = await handler.POST(postRequest({
+    date: '2026-10-31', metric_type: 'weight', value: 160, unit: 'lbs',
+  }));
+  assert.equal(response.status, 201);
+  assert.equal(inserted[2], 160 * 0.45359237);
+  assert.equal(inserted[3], 'kg');
+});
+
+test('weight display conversion round-trips between kilograms and pounds', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const kilograms = weight.poundsToKilograms(160);
+  assert.ok(Math.abs(kilograms - 72.5747792) < 1e-10);
+  assert.ok(Math.abs(weight.kilogramsToPounds(kilograms) - 160) < 1e-10);
+});
+
+test('biometric CSV imports normalize pounds to kilograms before storage', async () => {
+  let inserted;
+  const handler = route('import', async (_text, values) => {
+    inserted = values;
+    return [];
+  });
+  const response = await handler.POST(postRequest({
+    dataType: 'biometric',
+    csvData: 'date,metric_type,value,unit,notes\n2026-10-31,weight,160,lbs,',
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(inserted[2], 160 * 0.45359237);
+  assert.equal(inserted[3], 'kg');
 });
 
 for (const [dataType, table] of [['biometric', 'biometrics'], ['activity', 'activities'], ['stress', 'stress']]) {

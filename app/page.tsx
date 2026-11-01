@@ -13,6 +13,7 @@ import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import HealthMetricsChart from '@/components/HealthMetricsChart';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
+import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 
 // Helper function to determine waist-to-height ratio border color
 function getWaistHeightBorderColor(ratio: number | null): string {
@@ -38,11 +39,6 @@ function getBodyFatBorderColor(percentage: number | null): string {
   return 'border-orange-200 dark:border-orange-700';
 }
 
-// Helper function to convert pounds to kilograms
-function lbsToKg(lbs: number): number {
-  return lbs * 0.453592;
-}
-
 export default function Home() {
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
@@ -53,12 +49,14 @@ export default function Home() {
   const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
   const [isBodyFatInfoModalOpen, setIsBodyFatInfoModalOpen] = useState(false);
   const [lowestWeight, setLowestWeight] = useState<number | null>(null);
-  const [lowestWeightUnit, setLowestWeightUnit] = useState<string>('kg');
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [biometrics, setBiometrics] = useState<BiometricEntry[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [defaultChartRangeYears, setDefaultChartRangeYears] = useState<number | 'all'>(2);
+  const [activeChartRangeYears, setActiveChartRangeYears] = useState<number | 'all'>(2);
+  const [weightDisplayUnit, setWeightDisplayUnit] = useState<'kg' | 'lbs'>('kg');
 
   // Fetch biometrics and profile data
   const fetchData = async () => {
@@ -90,14 +88,13 @@ export default function Home() {
             // Convert all weights to kg for comparison
             const weightsInKg = recentWeights.map((entry) => {
               if (entry.unit === 'lbs') {
-                return lbsToKg(entry.value);
+                return poundsToKilograms(entry.value);
               }
               return entry.value;
             });
             
             const minWeight = Math.min(...weightsInKg);
             setLowestWeight(minWeight);
-            setLowestWeightUnit('kg');
           }
           else {
             // No weights in last 7 days, take the last recorded weight
@@ -106,10 +103,9 @@ export default function Home() {
               const latestWeightEntry = allWeights.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
               let weightInKg = latestWeightEntry.value;
               if (latestWeightEntry.unit === 'lbs') {
-                weightInKg = lbsToKg(latestWeightEntry.value);
+                weightInKg = poundsToKilograms(latestWeightEntry.value);
               }
               setLowestWeight(weightInKg);
-              setLowestWeightUnit('kg');
             } else {
               setLowestWeight(null);
             }
@@ -161,6 +157,33 @@ export default function Home() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const savedRange = window.localStorage.getItem('health-tracker-chart-range');
+    const savedWeightUnit = window.localStorage.getItem('health-tracker-weight-display-unit');
+    if (savedRange === 'all') {
+      setDefaultChartRangeYears('all');
+      setActiveChartRangeYears('all');
+    } else if ([1, 2, 5].includes(Number(savedRange))) {
+      const range = Number(savedRange);
+      setDefaultChartRangeYears(range);
+      setActiveChartRangeYears(range);
+    }
+    if (savedWeightUnit === 'kg' || savedWeightUnit === 'lbs') {
+      setWeightDisplayUnit(savedWeightUnit);
+    }
+  }, []);
+
+  const handleDefaultChartRangeChange = (range: number | 'all') => {
+    setDefaultChartRangeYears(range);
+    setActiveChartRangeYears(range);
+    window.localStorage.setItem('health-tracker-chart-range', String(range));
+  };
+
+  const handleWeightDisplayUnitChange = (unit: 'kg' | 'lbs') => {
+    setWeightDisplayUnit(unit);
+    window.localStorage.setItem('health-tracker-weight-display-unit', unit);
+  };
 
   const handleModalSuccess = () => {
     fetchData();
@@ -230,20 +253,19 @@ export default function Home() {
 
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h1 className="text-5xl font-bold text-gray-900 dark:text-white">
             Health Tracker
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300">
-            Self-hosted personal health tracker built with Next.js 15, Supabase, Tailwind CSS, and Recharts
-          </p>
         </div>
 
         {/* Key Metrics Display */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           <StatCard
             title="Lowest Weight (Last 7 Days)"
-            value={lowestWeight !== null ? lowestWeight.toFixed(1) : 'N/A'}
-            unit={lowestWeight !== null ? lowestWeightUnit : undefined}
+            value={lowestWeight !== null
+              ? (weightDisplayUnit === 'lbs' ? kilogramsToPounds(lowestWeight) : lowestWeight).toFixed(1)
+              : 'N/A'}
+            unit={lowestWeight !== null ? weightDisplayUnit : undefined}
             description="Minimum weight recorded in the past week"
             loading={loading}
             icon={
@@ -396,7 +418,13 @@ export default function Home() {
           onClose={() => setIsProfileModalOpen(false)}
           title="User Settings"
         >
-          <UserProfileForm onSuccess={() => { setIsProfileModalOpen(false); handleModalSuccess(); }} />
+          <UserProfileForm
+            chartRangeYears={defaultChartRangeYears}
+            onChartRangeChange={handleDefaultChartRangeChange}
+            weightDisplayUnit={weightDisplayUnit}
+            onWeightDisplayUnitChange={handleWeightDisplayUnitChange}
+            onSuccess={() => { setIsProfileModalOpen(false); handleModalSuccess(); }}
+          />
         </Modal>
 
         <Modal
@@ -437,7 +465,13 @@ export default function Home() {
         />
 
         {/* Health Metrics Chart */}
-        <HealthMetricsChart biometrics={biometrics} profile={profile} />
+        <HealthMetricsChart
+          biometrics={biometrics}
+          profile={profile}
+          rangeYears={activeChartRangeYears}
+          onRangeChange={setActiveChartRangeYears}
+          weightDisplayUnit={weightDisplayUnit}
+        />
 
         {/* Footer */}
         <div className="text-center mt-12">
