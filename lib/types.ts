@@ -51,3 +51,14 @@ export interface StressEntry {
   stress_level: number; // 1-10 scale (1=very low, 10=very high)
   notes?: string;
 }
+
+export interface SleepEntry {
+  id?: string;
+  created_at?: string;
+  wake_date: string;
+  bedtime: string;
+  wake_time: string;
+  sleep_duration_minutes: number;
+  restedness?: number;
+  notes?: string;
+}

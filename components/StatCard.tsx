@@ -31,7 +31,7 @@ export default function StatCard({
             {onInfoClick && (
               <button
                 onClick={onInfoClick}
-                className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400"
                 aria-label="More information"
                 title="More information"
               >

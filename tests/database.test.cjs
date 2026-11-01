@@ -200,6 +200,142 @@ test('weight display conversion round-trips between kilograms and pounds', () =>
   assert.ok(Math.abs(weight.kilogramsToPounds(kilograms) - 160) < 1e-10);
 });
 
+test('weekly activity summaries group by Monday and weight effort by duration', () => {
+  const { aggregateWeeklyActivities } = loadModule('lib/activitySummary.ts').exports;
+  const summaries = aggregateWeeklyActivities([
+    { date: '2026-10-25', activity_name: 'Walk', activity_type: 'cardio', effort_level: 6, duration_minutes: 60 },
+    { date: '2026-10-25', activity_name: 'Run', activity_type: 'cardio', effort_level: 8, duration_minutes: 30 },
+    { date: '2026-10-26', activity_name: 'Strength', activity_type: 'strength', effort_level: 5 },
+  ]);
+
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0].weekStart, '2026-10-19');
+  assert.equal(summaries[0].totalHours, 1.5);
+  assert.equal(summaries[0].weightedEffort, 6.7);
+  assert.equal(summaries[0].sessionCount, 2);
+  assert.equal(summaries[0].sessionsWithoutDuration, 0);
+  assert.equal(summaries[1].weekStart, '2026-10-26');
+  assert.equal(summaries[1].totalHours, 0);
+  assert.equal(summaries[1].weightedEffort, undefined);
+  assert.equal(summaries[1].sessionCount, 1);
+  assert.equal(summaries[1].sessionsWithoutDuration, 1);
+});
+
+test('weekly stress summaries count severity bands and retain weekly averages', () => {
+  const { aggregateWeeklyStress } = loadModule('lib/stressSummary.ts').exports;
+  const summaries = aggregateWeeklyStress([
+    { date: '2026-10-25', stress_level: 2 },
+    { date: '2026-10-25', stress_level: 3 },
+    { date: '2026-10-25', stress_level: 4 },
+    { date: '2026-10-25', stress_level: 7 },
+    { date: '2026-10-25', stress_level: 8 },
+    { date: '2026-10-25', stress_level: 10 },
+    { date: '2026-10-26', stress_level: 7 },
+  ]);
+
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0].weekStart, '2026-10-19');
+  assert.equal(summaries[0].low, 2);
+  assert.equal(summaries[0].moderate, 2);
+  assert.equal(summaries[0].high, 2);
+  assert.equal(summaries[0].readingCount, 6);
+  assert.equal(summaries[0].averageStress, 5.7);
+  assert.equal(summaries[1].weekStart, '2026-10-26');
+  assert.equal(summaries[1].moderate, 1);
+  assert.equal(summaries[1].readingCount, 1);
+});
+
+test('sleep entry saves sleep session details with parameterized values', async () => {
+  const sleepEntry = {
+    wake_date: '2026-10-31',
+    bedtime: '23:00',
+    wake_time: '07:00',
+    sleep_duration_minutes: 450,
+    restedness: 4,
+    notes: 'Woke once',
+  };
+  let inserted;
+  const handler = route('sleep', async (text, values) => {
+    inserted = values;
+    assert.match(text, /INSERT INTO sleep_entries/);
+    assert.match(text, /RETURNING \*/);
+    return [sleepEntry];
+  });
+
+  const response = await handler.POST(postRequest(sleepEntry));
+  assert.equal(response.status, 201);
+  assert.equal(inserted[0], sleepEntry.wake_date);
+  assert.equal(inserted[1], sleepEntry.bedtime);
+  assert.equal(inserted[2], sleepEntry.wake_time);
+  assert.equal(inserted[3], sleepEntry.sleep_duration_minutes);
+  assert.equal(inserted[4], sleepEntry.restedness);
+  assert.equal(inserted[5], sleepEntry.notes);
+  assert.deepEqual((await response.json()).data, [sleepEntry]);
+});
+
+test('sleep entry validates duration, times, and restedness before querying', async () => {
+  const handler = route('sleep', async () => { throw new Error('Unexpected query'); });
+  const validEntry = {
+    wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00',
+    sleep_duration_minutes: 450,
+  };
+
+  assert.equal((await handler.POST(postRequest({ ...validEntry, sleep_duration_minutes: 0 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, bedtime: '25:00' }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, restedness: 6 }))).status, 400);
+});
+
+test('sleep duration summaries aggregate by wake date and use age-appropriate target bands', () => {
+  const { aggregateDailySleep, getSleepTargetBand } = loadModule('lib/sleepSummary.ts').exports;
+  const summaries = aggregateDailySleep([
+    { wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00', sleep_duration_minutes: 420 },
+    { wake_date: '2026-10-31', bedtime: '14:00', wake_time: '14:30', sleep_duration_minutes: 30 },
+    { wake_date: '2026-11-01', bedtime: '22:30', wake_time: '06:30', sleep_duration_minutes: 480 },
+  ]);
+
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0].wakeDate, '2026-10-31');
+  assert.equal(summaries[0].sleepHours, 3.75);
+  assert.equal(summaries[0].entryCount, 2);
+  assert.equal(getSleepTargetBand(35).maximumHours, 9);
+  assert.equal(getSleepTargetBand(70).maximumHours, 8);
+  assert.equal(getSleepTargetBand(16), null);
+  assert.equal(getSleepTargetBand(undefined).minimumHours, 7);
+});
+
+test('daily stress summaries average multiple readings without filling missing dates', () => {
+  const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
+  const summaries = aggregateDailyStress([
+    { date: '2026-10-25', stress_level: 2 },
+    { date: '2026-10-25', stress_level: 6 },
+    { date: '2026-10-27', stress_level: 9 },
+  ]);
+
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0].date, '2026-10-25');
+  assert.equal(summaries[0].readingCount, 2);
+  assert.equal(summaries[0].averageStress, 4);
+  assert.equal(summaries[1].date, '2026-10-27');
+  assert.equal(summaries[1].averageStress, 9);
+});
+
+test('monthly stress summaries average recorded weeks and report coverage', () => {
+  const { aggregateMonthlyStress } = loadModule('lib/stressSummary.ts').exports;
+  const summaries = aggregateMonthlyStress([
+    { weekStart: '2026-09-28', low: 2, moderate: 0, high: 0, readingCount: 2, averageStress: 2 },
+    { weekStart: '2026-10-05', low: 0, moderate: 0, high: 3, readingCount: 3, averageStress: 8 },
+    { weekStart: '2026-10-12', low: 0, moderate: 0, high: 0, readingCount: 0 },
+    { weekStart: '2026-10-19', low: 0, moderate: 1, high: 0, readingCount: 1, averageStress: 4 },
+  ]);
+
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].monthStart, '2026-10-01');
+  assert.equal(summaries[0].averageStress, 4.7);
+  assert.equal(summaries[0].weeksWithReadings, 3);
+  assert.equal(summaries[0].weeksInRange, 4);
+  assert.equal(summaries[0].readingCount, 6);
+});
+
 test('biometric CSV imports normalize pounds to kilograms before storage', async () => {
   let inserted;
   const handler = route('import', async (_text, values) => {

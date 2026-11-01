@@ -1,6 +1,7 @@
 "use client";
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, AreaChart, Area, ComposedChart } from 'recharts';
+import { memo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
 import type { BiometricEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
@@ -260,17 +261,13 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
     if (dataPoint.normalizedWaistHeight !== undefined && dataPoint.normalizedBodyFat !== undefined) {
       const average = (dataPoint.normalizedWaistHeight + dataPoint.normalizedBodyFat) / 2;
       dataPoint.averagedNormalizedRisk = Number(average.toFixed(3));
-    } else if (dataPoint.normalizedWaistHeight !== undefined) {
-      dataPoint.averagedNormalizedRisk = dataPoint.normalizedWaistHeight;
-    } else if (dataPoint.normalizedBodyFat !== undefined) {
-      dataPoint.averagedNormalizedRisk = dataPoint.normalizedBodyFat;
     }
   });
 
   return chartData;
 };
 
-export default function HealthMetricsChart({
+function HealthMetricsChart({
   biometrics,
   profile,
   rangeYears,
@@ -290,6 +287,9 @@ export default function HealthMetricsChart({
       ? point
       : { ...point, weight: Number(kilogramsToPounds(point.weight).toFixed(1)) })
     : chartData;
+  const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
+  const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
+  const hasAveragedRisk = chartData.some((point) => point.averagedNormalizedRisk !== undefined);
   const rangeLabel = rangeYears === 'all'
     ? 'All available data'
     : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`;
@@ -344,22 +344,29 @@ export default function HealthMetricsChart({
         </div>
         <div className="mb-4">
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(236, 72, 153, 0.5)' }}></div>
-              <span>Normalized Waist-to-Height Ratio</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(6, 182, 212, 0.5)' }}></div>
-              <span>Normalized Body Fat %</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8b5cf6' }}></div>
-              <span>Averaged Health Risk</span>
-            </div>
+            {hasNormalizedWaist && (
+              <div className="flex items-center gap-2">
+                <div className="w-5 border-t-2 border-pink-500"></div>
+                <span>Normalized Waist-to-Height Ratio</span>
+              </div>
+            )}
+            {hasNormalizedBodyFat && (
+              <div className="flex items-center gap-2">
+                <div className="w-5 border-t-2 border-dashed border-cyan-500"></div>
+                <span>Normalized Body Fat %</span>
+              </div>
+            )}
+            {hasAveragedRisk && (
+              <div className="flex items-center gap-2">
+                <div className="w-5 border-t-[3px] border-violet-500"></div>
+                <span>Averaged Health Risk</span>
+              </div>
+            )}
           </div>
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
             <p>💡 Normalized metrics show health risk on a 0-1 scale where 0 = ideal health, 1 = high risk threshold.</p>
             <p>💡 Waist-to-Height: 0 = {WAIST_HEIGHT_ANCHORS.ideal}, 1 = {WAIST_HEIGHT_ANCHORS.threshold} | Body Fat: 0 = {BODY_FAT_ANCHORS.ideal}%, 1 = {BODY_FAT_ANCHORS.threshold}%</p>
+            <p>💡 Averaged Health Risk appears when both metrics are recorded on the same date.</p>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={400}>
@@ -381,40 +388,38 @@ export default function HealthMetricsChart({
               }}
             />
             <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
-            <Legend />
             {/* Reference lines for risk levels */}
             <ReferenceArea y1={0} y2={0.33} fill="rgba(34, 197, 94, 0.1)" fillOpacity={1} />
             <ReferenceArea y1={0.33} y2={0.67} fill="rgba(251, 191, 36, 0.1)" fillOpacity={1} />
             <ReferenceArea y1={0.67} y2={1} fill="rgba(239, 68, 68, 0.1)" fillOpacity={1} />
-            <Area 
+            {hasAveragedRisk && <Line
+              type="monotone"
+              dataKey="averagedNormalizedRisk"
+              stroke="#8b5cf6"
+              strokeWidth={3}
+              name="Averaged Health Risk"
+              connectNulls
+              dot={false}
+            />}
+            {hasNormalizedWaist && <Line
               type="monotone" 
               dataKey="normalizedWaistHeight" 
               stroke="#ec4899" 
-              fill="#ec4899"
-              fillOpacity={0.3}
               strokeWidth={2} 
               name="Normalized Waist-to-Height"
               connectNulls
-            />
-            <Area 
+              dot={false}
+            />}
+            {hasNormalizedBodyFat && <Line
               type="monotone" 
               dataKey="normalizedBodyFat" 
               stroke="#06b6d4" 
-              fill="#06b6d4"
-              fillOpacity={0.3}
               strokeWidth={2} 
+              strokeDasharray="5 4"
               name="Normalized Body Fat %"
               connectNulls
-            />
-            <Line 
-              type="monotone" 
-              dataKey="averagedNormalizedRisk" 
-              stroke="#8b5cf6" 
-              strokeWidth={4} 
-              name="Averaged Health Risk"
-              connectNulls
-              dot={{ r: 5, fill: '#8b5cf6' }}
-            />
+              dot={false}
+            />}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -550,3 +555,5 @@ export default function HealthMetricsChart({
     </div>
   );
 }
+
+export default memo(HealthMetricsChart);

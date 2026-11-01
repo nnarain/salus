@@ -5,6 +5,7 @@ import BiometricForm from '@/components/BiometricForm';
 import ActivityForm from '@/components/ActivityForm';
 import UserProfileForm from '@/components/UserProfileForm';
 import StressForm from '@/components/StressForm';
+import SleepForm from '@/components/SleepForm';
 import CsvImportForm from '@/components/CsvImportForm';
 import CsvExportForm from '@/components/CsvExportForm';
 import Modal from '@/components/Modal';
@@ -12,7 +13,10 @@ import StatCard from '@/components/StatCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import HealthMetricsChart from '@/components/HealthMetricsChart';
-import type { BiometricEntry, UserProfile } from '@/lib/types';
+import WeeklyActivityChart from '@/components/WeeklyActivityChart';
+import WeeklyStressChart from '@/components/WeeklyStressChart';
+import SleepDurationChart from '@/components/SleepDurationChart';
+import type { ActivityEntry, BiometricEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 
 // Helper function to determine waist-to-height ratio border color
@@ -44,6 +48,7 @@ export default function Home() {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStressModalOpen, setIsStressModalOpen] = useState(false);
+  const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isWaistHeightInfoModalOpen, setIsWaistHeightInfoModalOpen] = useState(false);
@@ -53,6 +58,9 @@ export default function Home() {
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [biometrics, setBiometrics] = useState<BiometricEntry[]>([]);
+  const [activities, setActivities] = useState<ActivityEntry[] | null>(null);
+  const [stressEntries, setStressEntries] = useState<StressEntry[] | null>(null);
+  const [sleepEntries, setSleepEntries] = useState<SleepEntry[] | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [defaultChartRangeYears, setDefaultChartRangeYears] = useState<number | 'all'>(2);
   const [activeChartRangeYears, setActiveChartRangeYears] = useState<number | 'all'>(2);
@@ -66,6 +74,18 @@ export default function Home() {
       // Fetch biometrics data
       const biometricsResponse = await fetch('/api/biometrics');
       const biometricsData = await biometricsResponse.json();
+
+      const activitiesResponse = await fetch('/api/activities');
+      const activitiesData = await activitiesResponse.json();
+      setActivities(activitiesResponse.ok && Array.isArray(activitiesData.data) ? activitiesData.data : null);
+
+      const stressResponse = await fetch('/api/stress');
+      const stressData = await stressResponse.json();
+      setStressEntries(stressResponse.ok && Array.isArray(stressData.data) ? stressData.data : null);
+
+      const sleepResponse = await fetch('/api/sleep');
+      const sleepData = await sleepResponse.json();
+      setSleepEntries(sleepResponse.ok && Array.isArray(sleepData.data) ? sleepData.data : null);
       
       // Fetch profile data
         const profileResponse = await fetch('/api/profile');
@@ -394,6 +414,16 @@ export default function Home() {
             </svg>
             Add Stress Level
           </button>
+
+          <button
+            onClick={() => setIsSleepModalOpen(true)}
+            className="flex items-center gap-3 rounded-lg bg-teal-600 px-8 py-4 font-semibold text-white shadow-lg transition-all hover:bg-teal-700 hover:shadow-xl"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.985 12.486a9 9 0 11-9.473-9.472c.405-.022.617.463.402.807a6.5 6.5 0 008.268 8.268c.344-.215.829-.003.803.397z" />
+            </svg>
+            Add Sleep Data
+          </button>
         </div>
 
         {/* Modals */}
@@ -410,7 +440,7 @@ export default function Home() {
           onClose={() => setIsActivityModalOpen(false)}
           title="Add Activity"
         >
-          <ActivityForm onSuccess={() => setIsActivityModalOpen(false)} />
+          <ActivityForm onSuccess={() => { setIsActivityModalOpen(false); handleModalSuccess(); }} />
         </Modal>
 
         <Modal
@@ -432,7 +462,15 @@ export default function Home() {
           onClose={() => setIsStressModalOpen(false)}
           title="Add Stress Level"
         >
-          <StressForm onSuccess={() => setIsStressModalOpen(false)} />
+          <StressForm onSuccess={() => { setIsStressModalOpen(false); handleModalSuccess(); }} />
+        </Modal>
+
+        <Modal
+          isOpen={isSleepModalOpen}
+          onClose={() => setIsSleepModalOpen(false)}
+          title="Add Sleep Data"
+        >
+          <SleepForm onSuccess={() => { setIsSleepModalOpen(false); handleModalSuccess(); }} />
         </Modal>
 
         <Modal
@@ -472,6 +510,28 @@ export default function Home() {
           onRangeChange={setActiveChartRangeYears}
           weightDisplayUnit={weightDisplayUnit}
         />
+        <div className="mt-6">
+          <WeeklyActivityChart
+            activities={activities}
+            rangeYears={activeChartRangeYears}
+            loading={loading}
+          />
+        </div>
+        <div className="mt-6">
+          <WeeklyStressChart
+            entries={stressEntries}
+            rangeYears={activeChartRangeYears}
+            loading={loading}
+          />
+        </div>
+        <div className="mt-6">
+          <SleepDurationChart
+            entries={sleepEntries}
+            rangeYears={activeChartRangeYears}
+            age={profile?.age}
+            loading={loading}
+          />
+        </div>
 
         {/* Footer */}
         <div className="text-center mt-12">

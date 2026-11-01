@@ -7,6 +7,26 @@
         "/^node --test --test-name-pattern='weight API entries normalize\\|weight display conversion\\|biometric CSV imports normalize' tests/database\\.test\\.cjs$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='weekly activity summaries group by Monday' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='weekly stress summaries count severity bands' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='monthly stress summaries average recorded weeks' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='sleep entry saves sleep session\\|sleep entry validates duration' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='sleep duration summaries aggregate by wake date' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }
