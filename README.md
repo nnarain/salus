@@ -1,6 +1,6 @@
-# Health Tracker
+# Salus
 
-Self hosted personal health tracker built with Next.js 16, PostgreSQL, Tailwind CSS, and Recharts.
+Self-hosted personal health tracker built with Next.js 16, PostgreSQL, Tailwind CSS, and Recharts.
 
 ## Technology Stack
 

@@ -62,3 +62,13 @@ export interface SleepEntry {
   restedness?: number;
   notes?: string;
 }
+
+export interface NutritionEntry {
+  id?: string;
+  created_at?: string;
+  date: string;
+  calories_kcal: number;
+  protein_grams: number;
+  water_ml: number;
+  notes?: string;
+}

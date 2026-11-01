@@ -303,6 +303,45 @@ test('sleep duration summaries aggregate by wake date and use age-appropriate ta
   assert.equal(getSleepTargetBand(undefined).minimumHours, 7);
 });
 
+test('nutrition entries save daily totals and parameterize notes', async () => {
+  const nutrition = {
+    date: '2026-10-31',
+    calories_kcal: 2150,
+    protein_grams: 132.5,
+    water_ml: 2400,
+    notes: 'Training day',
+  };
+  let inserted;
+  const handler = route('nutrition', async (text, values) => {
+    inserted = values;
+    assert.match(text, /INSERT INTO nutrition_entries/);
+    assert.match(text, /ON CONFLICT \(date\) DO UPDATE/);
+    assert.match(text, /RETURNING \*/);
+    return [nutrition];
+  });
+
+  const response = await handler.POST(postRequest(nutrition));
+  assert.equal(response.status, 201);
+  assert.equal(inserted[0], nutrition.date);
+  assert.equal(inserted[1], nutrition.calories_kcal);
+  assert.equal(inserted[2], nutrition.protein_grams);
+  assert.equal(inserted[3], nutrition.water_ml);
+  assert.equal(inserted[4], nutrition.notes);
+  assert.deepEqual((await response.json()).data, [nutrition]);
+});
+
+test('nutrition entries reject negative values and invalid dates before querying', async () => {
+  const handler = route('nutrition', async () => { throw new Error('Unexpected query'); });
+  const validEntry = {
+    date: '2026-10-31', calories_kcal: 2000, protein_grams: 100, water_ml: 2000,
+  };
+
+  assert.equal((await handler.POST(postRequest({ ...validEntry, calories_kcal: -1 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, protein_grams: -0.1 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, water_ml: -1 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, date: '2026-02-30' }))).status, 400);
+});
+
 test('daily stress summaries average multiple readings without filling missing dates', () => {
   const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
   const summaries = aggregateDailyStress([

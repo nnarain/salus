@@ -1,6 +1,6 @@
 # CSV Import Format Documentation
 
-This document describes the expected CSV format for importing biometric, activity, and stress data into the Health Tracker application.
+This document describes the expected CSV format for importing biometric, activity, and stress data into Salus.
 
 ## General Guidelines
 

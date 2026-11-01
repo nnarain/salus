@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Health Tracker",
-  description: "Self hosted personal health tracker",
+  title: "Salus",
+  description: "Self-hosted health and wellness tracker",
 };
 
 export default function RootLayout({
