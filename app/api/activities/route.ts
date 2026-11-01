@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { query } from '@/lib/db';
 import type { ActivityEntry } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -38,28 +38,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert data into Supabase
-    const { data, error } = await supabase
-      .from('activities')
-      .insert([
-        {
-          date: body.date,
-          activity_name: body.activity_name,
-          activity_type: body.activity_type,
-          effort_level: body.effort_level,
-          duration_minutes: body.duration_minutes || null,
-          notes: body.notes || null,
-        },
-      ])
-      .select();
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to save activity data', details: error.message },
-        { status: 500 }
-      );
-    }
+    const data = await query<ActivityEntry>(
+      `INSERT INTO activities
+       (date, activity_name, activity_type, effort_level, duration_minutes, notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [body.date, body.activity_name, body.activity_type, body.effort_level,
+        body.duration_minutes || null, body.notes || null],
+    );
 
     return NextResponse.json(
       { message: 'Activity data saved successfully', data },
@@ -76,19 +61,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .order('date', { ascending: false })
-      .limit(500);
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch activity data', details: error.message },
-        { status: 500 }
-      );
-    }
+    const data = await query<ActivityEntry>(
+      'SELECT * FROM activities ORDER BY date DESC LIMIT 500',
+    );
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (error) {

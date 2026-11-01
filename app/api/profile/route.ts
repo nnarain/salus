@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { query } from '@/lib/db';
 import type { UserProfile } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -22,59 +22,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if profile already exists
-    const { data: existingProfile } = await supabase
-      .from('user_profile')
-      .select('*')
-      .limit(1)
-      .single();
-
-    let result;
-    if (existingProfile) {
-      // Update existing profile
-      const { data, error } = await supabase
-        .from('user_profile')
-        .update({
-          height: body.height || null,
-          height_unit: body.height_unit || null,
-          age: body.age || null,
-          notes: body.notes || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingProfile.id)
-        .select();
-
-      if (error) {
-        console.error('Supabase error:', error);
-        return NextResponse.json(
-          { error: 'Failed to update profile', details: error.message },
-          { status: 500 }
-        );
-      }
-      result = data;
-    } else {
-      // Create new profile
-      const { data, error } = await supabase
-        .from('user_profile')
-        .insert([
-          {
-            height: body.height || null,
-            height_unit: body.height_unit || null,
-            age: body.age || null,
-            notes: body.notes || null,
-          },
-        ])
-        .select();
-
-      if (error) {
-        console.error('Supabase error:', error);
-        return NextResponse.json(
-          { error: 'Failed to create profile', details: error.message },
-          { status: 500 }
-        );
-      }
-      result = data;
-    }
+    const result = await query<UserProfile>(
+      `INSERT INTO user_profile (height, height_unit, age, notes)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (singleton) DO UPDATE SET
+         height = EXCLUDED.height, height_unit = EXCLUDED.height_unit,
+         age = EXCLUDED.age, notes = EXCLUDED.notes, updated_at = NOW()
+       RETURNING id, created_at, updated_at, height, height_unit, age, notes`,
+      [body.height || null, body.height_unit || null, body.age || null, body.notes || null],
+    );
 
     return NextResponse.json(
       { message: 'Profile saved successfully', data: result },
@@ -91,20 +47,10 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
-      .from('user_profile')
-      .select('*')
-      .limit(1)
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      // PGRST116 is "not found" error, which is acceptable
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch profile', details: error.message },
-        { status: 500 }
-      );
-    }
+    const [data] = await query<UserProfile>(
+      `SELECT id, created_at, updated_at, height, height_unit, age, notes
+       FROM user_profile WHERE singleton = TRUE`,
+    );
 
     return NextResponse.json({ data: data || null }, { status: 200 });
   } catch (error) {
