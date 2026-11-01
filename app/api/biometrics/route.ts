@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { query } from '@/lib/db';
 import type { BiometricEntry } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -22,27 +22,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert data into Supabase
-    const { data, error } = await supabase
-      .from('biometrics')
-      .insert([
-        {
-          date: body.date,
-          metric_type: body.metric_type,
-          value: body.value,
-          unit: body.unit,
-          notes: body.notes || null,
-        },
-      ])
-      .select();
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to save biometric data', details: error.message },
-        { status: 500 }
-      );
-    }
+    const data = await query<BiometricEntry>(
+      `INSERT INTO biometrics (date, metric_type, value, unit, notes)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [body.date, body.metric_type, body.value, body.unit, body.notes || null],
+    );
 
     return NextResponse.json(
       { message: 'Biometric data saved successfully', data },
@@ -59,19 +43,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
-      .from('biometrics')
-      .select('*')
-      .order('date', { ascending: false })
-      .limit(500);
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch biometric data', details: error.message },
-        { status: 500 }
-      );
-    }
+    const data = await query<BiometricEntry>(
+      'SELECT * FROM biometrics ORDER BY date DESC LIMIT 500',
+    );
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (error) {

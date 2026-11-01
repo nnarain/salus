@@ -1,57 +1,49 @@
 services:
-  # PostgreSQL Database
   db:
-    image: supabase/postgres:15.1.1.54
-    container_name: health-tracker-db
+    image: postgres:17-bookworm
     restart: unless-stopped
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
     volumes:
-      - db-data:/var/lib/postgresql/data
-      - ./docker/init:/docker-entrypoint-initdb.d:ro
-      - ./supabase/migrations:/migrations:ro
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
-  # PostgREST API (provides REST API for PostgreSQL)
-  rest:
-    image: postgrest/postgrest:v12.0.2
-    container_name: health-tracker-rest
-    restart: unless-stopped
-    ports:
-      - "3001:3000"
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
-      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  # Health Tracker Next.js Application
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: health-tracker-app
     restart: unless-stopped
+    init: true
     ports:
-      - "3000:3000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     environment:
-      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:3001}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
+    networks:
+      - default
+      - database
     depends_on:
-      - rest
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/profile').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  db-data:
+  postgres-data:
+
+networks:
+  default:
+  database:
+    internal: true

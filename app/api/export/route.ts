@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { query } from '@/lib/db';
 import type { BiometricEntry, ActivityEntry, StressEntry } from '@/lib/types';
 
 type DataType = 'biometric' | 'activity' | 'stress';
@@ -63,7 +63,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let data: (BiometricEntry | ActivityEntry | StressEntry)[] = [];
     let tableName = '';
 
     switch (dataType) {
@@ -78,20 +77,9 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    const { data: fetchedData, error } = await supabase
-      .from(tableName)
-      .select('*')
-      .order('date', { ascending: true });
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch data', details: error.message },
-        { status: 500 }
-      );
-    }
-
-    data = fetchedData || [];
+    const data = await query<BiometricEntry | ActivityEntry | StressEntry>(
+      `SELECT * FROM ${tableName} ORDER BY date ASC`,
+    );
 
     const csvContent = formatCSV(data, dataType);
 
@@ -105,7 +93,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Export error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to export data' },
+      { error: 'Failed to export data' },
       { status: 500 }
     );
   }

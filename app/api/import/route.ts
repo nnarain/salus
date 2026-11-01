@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { query } from '@/lib/db';
 
 interface ImportRequest {
   dataType: 'biometric' | 'activity' | 'stress';
@@ -101,15 +101,12 @@ export async function POST(request: Request) {
             continue;
           }
 
-          const { error } = await supabase.from('biometrics').insert({
-            date: record.date,
-            metric_type: record.metric_type,
-            value: parseFloat(record.value),
-            unit: record.unit,
-            notes: record.notes || null,
-          });
-
-          if (error) throw error;
+          await query(
+            `INSERT INTO biometrics (date, metric_type, value, unit, notes)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [record.date, record.metric_type, parseFloat(record.value),
+              record.unit, record.notes || null],
+          );
           result.imported++;
         } else if (dataType === 'activity') {
           if (!validateActivityRecord(record)) {
@@ -118,16 +115,15 @@ export async function POST(request: Request) {
             continue;
           }
 
-          const { error } = await supabase.from('activities').insert({
-            date: record.date,
-            activity_name: record.activity_name,
-            activity_type: record.activity_type,
-            effort_level: parseInt(record.effort_level, 10),
-            duration_minutes: record.duration_minutes ? parseInt(record.duration_minutes, 10) : null,
-            notes: record.notes || null,
-          });
-
-          if (error) throw error;
+          await query(
+            `INSERT INTO activities
+             (date, activity_name, activity_type, effort_level, duration_minutes, notes)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [record.date, record.activity_name, record.activity_type,
+              parseInt(record.effort_level, 10),
+              record.duration_minutes ? parseInt(record.duration_minutes, 10) : null,
+              record.notes || null],
+          );
           result.imported++;
         } else if (dataType === 'stress') {
           if (!validateStressRecord(record)) {
@@ -136,20 +132,16 @@ export async function POST(request: Request) {
             continue;
           }
 
-          const { error } = await supabase.from('stress').insert({
-            date: record.date,
-            stress_level: parseInt(record.stress_level, 10),
-            notes: record.notes || null,
-          });
-
-          if (error) throw error;
+          await query(
+            'INSERT INTO stress (date, stress_level, notes) VALUES ($1, $2, $3)',
+            [record.date, parseInt(record.stress_level, 10), record.notes || null],
+          );
           result.imported++;
         }
       } catch (error) {
+        console.error('Error importing record:', error);
         result.skipped++;
-        result.errors.push(
-          `Error importing record: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
+        result.errors.push('Error importing record: Failed to save record');
       }
     }
 
