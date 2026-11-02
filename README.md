@@ -35,6 +35,20 @@ This setup uses a new `postgres-data` volume. Old database volumes are not reuse
 or deleted. If the old stack is still running, stop its containers first with
 `docker compose down --remove-orphans`, without `-v`, from the same project folder.
 
+### MCP Server
+
+An optional MCP server (Python, streamable HTTP) lets an AI agent read and log
+data through the app's REST API: add weigh-ins, activities, stress, sleep, and
+nutrition; bulk import CSV; find logging gaps; and analyse weight/body
+composition trends and energy balance. Start it alongside the app with:
+
+```bash
+docker compose --profile mcp up --build -d
+```
+
+Point your MCP client at `http://localhost:8000/mcp`. Like the app, it has no
+authentication and binds to loopback by default.
+
 ### Development
 
 For containerized development with hot reload:

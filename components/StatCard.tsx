@@ -9,6 +9,8 @@ interface StatCardProps {
   onInfoClick?: () => void;
   borderColor?: string;
   descriptionColor?: string;
+  valueColor?: string;
+  children?: React.ReactNode;
 }
 
 export default function StatCard({
@@ -21,11 +23,13 @@ export default function StatCard({
   onInfoClick,
   borderColor = 'border-blue-200 dark:border-blue-700',
   descriptionColor = 'text-xs text-gray-500 dark:text-gray-400 mt-1',
+  valueColor = 'text-gray-900 dark:text-white',
+  children,
 }: StatCardProps) {
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 ${borderColor} hover:shadow-xl transition-all`}>
       <div className="flex items-start justify-between">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
               {title}
@@ -60,8 +64,8 @@ export default function StatCard({
             </div>
           ) : (
             <>
-              <div className="flex items-baseline gap-2">
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                <p className={`break-words text-3xl font-bold ${valueColor}`}>
                   {value}
                 </p>
                 {unit && (
@@ -70,6 +74,7 @@ export default function StatCard({
                   </p>
                 )}
               </div>
+              {children}
               {description && (
                 <p className={descriptionColor}>
                   {description}

@@ -1,3 +1,4 @@
+The first row of your CSV file must contain column headers (field names)
 # CSV Import Format Documentation
 
 This document describes the expected CSV format for importing biometric, activity, and stress data into Salus.
@@ -22,6 +23,7 @@ This document describes the expected CSV format for importing biometric, activit
 
 ### Optional Fields
 - `notes` - Additional notes or comments about the measurement
+- `scale_min` and `scale_max` - Optional bounds for a device-specific level, such as a visceral fat scale
 
 ### Allowed Metric Types and Units
 
@@ -30,8 +32,17 @@ This document describes the expected CSV format for importing biometric, activit
 | `weight` | `kg`, `lbs` |
 | `waistline` | `cm`, `inches` |
 | `body_fat_percentage` | `%` |
+| `visceral_fat_level` | `level` |
+| `muscle_mass` | `kg` |
 
-Weight values submitted in `lbs` are converted to kilograms when stored.
+Muscle mass values must be positive and recorded in kilograms.
+
+Weight values submitted in `lbs` are converted to kilograms when stored. For `visceral_fat_level`, scale bounds can be included after notes, for example:
+
+```csv
+date,metric_type,value,unit,notes,scale_min,scale_max
+2026-10-31,visceral_fat_level,8,level,Scale reading,0,15
+```
 
 ### Example CSV
 
@@ -42,6 +53,7 @@ date,metric_type,value,unit,notes
 2024-01-16,body_fat_percentage,18.5,%,After workout
 2024-01-17,weight,75.2,kg,
 2024-01-18,waistline,84.5,cm,Measured after breakfast
+2024-01-18,muscle_mass,56.2,kg,Scale reading
 ```
 
 ## Activity Data Format

@@ -40,6 +40,21 @@ services:
       retries: 3
       start_period: 60s
 
+  mcp:
+    profiles: ["mcp"]
+    build:
+      context: ./mcp
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${MCP_BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-8000}:8000"
+    environment:
+      HEALTH_TRACKER_API_URL: http://app:3000
+      TZ: ${TZ:-UTC}
+    depends_on:
+      app:
+        condition: service_healthy
+
 volumes:
   postgres-data:
 

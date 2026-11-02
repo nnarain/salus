@@ -16,6 +16,7 @@ interface HealthMetricsChartProps {
 interface ChartDataPoint {
   date: string;
   weight?: number;
+  muscleMass?: number;
   waistHeightRatio?: number;
   bodyFatPercentage?: number;
   healthRisk?: number;
@@ -36,6 +37,7 @@ interface CustomTooltipProps {
   active?: boolean;
   payload?: TooltipPayloadItem[];
   weightDisplayUnit: 'kg' | 'lbs';
+  showRiskInsights?: boolean;
 }
 
 // Health range thresholds
@@ -70,7 +72,7 @@ const getBodyFatColor = (percentage: number): string => {
 };
 
 // Custom tooltip to show color-coded insights
-const CustomTooltip = ({ active, payload, weightDisplayUnit }: CustomTooltipProps) => {
+const CustomTooltip = ({ active, payload, weightDisplayUnit, showRiskInsights = true }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
@@ -89,7 +91,7 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit }: CustomTooltipProp
             } else {
               insight = ' (High Risk)';
             }
-          } else if (entry.dataKey === 'bodyFatPercentage' && entry.value) {
+          } else if (entry.dataKey === 'bodyFatPercentage' && entry.value && showRiskInsights) {
             const percentage = entry.value;
             color = getBodyFatColor(percentage);
             if (percentage < 18) {
@@ -121,8 +123,8 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit }: CustomTooltipProp
 
           return (
             <p key={index} style={{ color }} className="text-sm">
-              {entry.name}: {entry.dataKey === 'weight' ? entry.value.toFixed(1) : entry.value.toFixed(3)}
-              {entry.dataKey === 'weight' && ` ${weightDisplayUnit}`}
+              {entry.name}: {['weight', 'muscleMass', 'bodyFatPercentage'].includes(entry.dataKey) ? entry.value.toFixed(1) : entry.value.toFixed(3)}
+              {(entry.dataKey === 'weight' || entry.dataKey === 'muscleMass') && ` ${weightDisplayUnit}`}
               {entry.dataKey === 'bodyFatPercentage' && '%'}
               {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
               <span className="font-semibold">{insight}</span>
@@ -219,6 +221,8 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
       dataPoint.waistHeightRatio = Number(ratio.toFixed(3));
     } else if (entry.metric_type === 'body_fat_percentage') {
       dataPoint.bodyFatPercentage = Number(entry.value.toFixed(1));
+    } else if (entry.metric_type === 'muscle_mass') {
+      dataPoint.muscleMass = Number(entry.value.toFixed(1));
     }
   });
 
@@ -281,10 +285,14 @@ function HealthMetricsChart({
     : biometrics.filter((entry) => new Date(entry.date) >= cutoffDate);
   const chartData = processChartData(visibleBiometrics, profile);
   const weightChartData = weightDisplayUnit === 'lbs'
-    ? chartData.map((point) => point.weight === undefined
-      ? point
-      : { ...point, weight: Number(kilogramsToPounds(point.weight).toFixed(1)) })
+    ? chartData.map((point) => ({
+      ...point,
+      weight: point.weight === undefined ? undefined : Number(kilogramsToPounds(point.weight).toFixed(1)),
+      muscleMass: point.muscleMass === undefined ? undefined : Number(kilogramsToPounds(point.muscleMass).toFixed(1)),
+    }))
     : chartData;
+  const compositionData = weightChartData.filter((point) =>
+    point.weight !== undefined || point.muscleMass !== undefined || point.bodyFatPercentage !== undefined);
   const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
   const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
   const hasAveragedRisk = chartData.some((point) => point.averagedNormalizedRisk !== undefined);
@@ -474,29 +482,21 @@ function HealthMetricsChart({
       </div>
 
       {/* Body Composition Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+      <section aria-label="Body composition" className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 sm:p-8">
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Body Composition Metrics</h2>
           <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
         </div>
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: '#ec4899' }}></div>
-              <span>Waist-to-Height Ratio</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: '#06b6d4' }}></div>
-              <span>Body Fat %</span>
-            </div>
-          </div>
-          <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
-            <p>💡 Waist-to-Height Ratio: &lt;0.5 Healthy, 0.5-0.6 Increased Risk, &gt;0.6 High Risk</p>
-            <p>💡 Body Fat %: &lt;18 Athletic, 18-25 Fitness, 25-32 Average, &gt;32 High</p>
-          </div>
+        {compositionData.length === 0 ? (
+          <p className="py-12 text-center text-gray-600 dark:text-gray-400">No body fat, muscle mass, or weight measurements in this date range.</p>
+        ) : (
+          <>
+        <div className="mb-2 flex justify-between gap-4 text-xs text-gray-600 dark:text-gray-400">
+          <span>Body fat (%)</span>
+          <span>Mass ({weightDisplayUnit})</span>
         </div>
         <ResponsiveContainer width="100%" height={400}>
-          <LineChart data={chartData}>
+          <LineChart data={compositionData} margin={{ top: 8, right: 0, bottom: 8, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
               dataKey="date" 
@@ -505,30 +505,46 @@ function HealthMetricsChart({
               textAnchor="end"
               height={80}
             />
-            <YAxis />
-            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
+            <YAxis yAxisId="percentage" orientation="left" width={44} domain={['auto', 'auto']} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value}%`} />
+            <YAxis yAxisId="mass" orientation="right" width={52} domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} showRiskInsights={false} />} />
             <Legend />
-            <Line 
-              type="monotone" 
-              dataKey="waistHeightRatio" 
-              stroke="#ec4899" 
-              strokeWidth={2} 
-              name="Waist-to-Height Ratio"
+            <Line
+              yAxisId="percentage"
+              type="linear"
+              dataKey="bodyFatPercentage"
+              stroke="#06b6d4"
+              strokeWidth={2}
+              name="Body Fat %"
               connectNulls
               dot={{ r: 4 }}
             />
-            <Line 
-              type="monotone" 
-              dataKey="bodyFatPercentage" 
-              stroke="#06b6d4" 
-              strokeWidth={2} 
-              name="Body Fat %"
+            <Line
+              yAxisId="mass"
+              type="linear"
+              dataKey="muscleMass"
+              stroke="#16a34a"
+              strokeWidth={2}
+              name="Muscle Mass"
+              connectNulls
+              dot={{ r: 4 }}
+            />
+            <Line
+              yAxisId="mass"
+              type="linear"
+              dataKey="weight"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              strokeDasharray="5 3"
+              name="Body Weight"
               connectNulls
               dot={{ r: 4 }}
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

@@ -10,7 +10,7 @@ const { NextRequest } = require('next/server');
 
 function loadModule(file, overrides = {}, environment = {}) {
   const source = ts.transpileModule(readFileSync(resolve(__dirname, '..', file), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const context = vm.createContext({
     exports: {},
@@ -125,6 +125,26 @@ for (const [name, record] of Object.entries(records)) {
   });
 }
 
+test('latest visceral fat range uses save order and excludes readings without bounds', async () => {
+  const saved = { scale_min: 0, scale_max: 15 };
+  const handler = route('biometrics', async (text) => {
+    assert.match(text, /metric_type = 'visceral_fat_level'/);
+    assert.match(text, /scale_min IS NOT NULL AND scale_max IS NOT NULL/);
+    assert.match(text, /ORDER BY created_at DESC, id DESC LIMIT 1/);
+    return [saved];
+  });
+  const response = await handler.GET(new NextRequest('http://localhost/api/biometrics?latestScaleRange=true'));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { data: [saved] });
+});
+
+test('latest visceral fat range is empty before a range has been saved', async () => {
+  const handler = route('biometrics', async () => []);
+  const response = await handler.GET(new NextRequest('http://localhost/api/biometrics?latestScaleRange=true'));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { data: [] });
+});
+
 test('an absent profile returns data:null', async () => {
   const response = await route('profile', async () => []).GET();
   assert.equal(response.status, 200);
@@ -205,6 +225,185 @@ test('weight API entries normalize pounds to kilograms before storage', async ()
   assert.equal(response.status, 201);
   assert.equal(inserted[2], 160 * 0.45359237);
   assert.equal(inserted[3], 'kg');
+});
+
+test('visceral fat API entries allow zero and persist optional scale bounds', async () => {
+  let inserted;
+  const visceralEntry = {
+    date: '2026-10-31', metric_type: 'visceral_fat_level', value: 0, unit: 'level',
+    scale_min: 0, scale_max: 15, notes: 'Scale reading',
+  };
+  const handler = route('biometrics', async (_text, values) => {
+    inserted = values;
+    return [visceralEntry];
+  });
+
+  const response = await handler.POST(postRequest(visceralEntry));
+  assert.equal(response.status, 201);
+  assert.equal(inserted[2], 0);
+  assert.equal(inserted[3], 'level');
+  assert.equal(inserted[4], 0);
+  assert.equal(inserted[5], 15);
+  assert.equal(inserted[6], visceralEntry.notes);
+});
+
+test('visceral fat API rejects incomplete or incompatible scale ranges', async () => {
+  const handler = route('biometrics', async () => { throw new Error('Unexpected query'); });
+  const validEntry = {
+    date: '2026-10-31', metric_type: 'visceral_fat_level', value: 8, unit: 'level',
+  };
+
+  assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: 0 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: 0, scale_max: 7 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, unit: '%' }))).status, 400);
+});
+
+test('visceral fat CSV import preserves scale range metadata', async () => {
+  let inserted;
+  const handler = route('import', async (_text, values) => {
+    inserted = values;
+    return [];
+  });
+  const response = await handler.POST(postRequest({
+    dataType: 'biometric',
+    csvData: 'date,metric_type,value,unit,notes,scale_min,scale_max\n2026-10-31,visceral_fat_level,8,level,Scale reading,0,15',
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal(inserted[4], 0);
+  assert.equal(inserted[5], 15);
+  assert.equal(inserted[6], 'Scale reading');
+});
+
+test('muscle mass API entries persist kilograms and notes without conversion', async () => {
+  const entry = { date: '2026-10-31', metric_type: 'muscle_mass', value: 56.25, unit: 'kg', notes: 'Scale reading' };
+  const handler = route('biometrics', async (text, values) => {
+    assert.match(text, /INSERT INTO biometrics/);
+    assert.equal(values[1], 'muscle_mass');
+    assert.equal(values[2], 56.25);
+    assert.equal(values[3], 'kg');
+    assert.equal(values[4], null);
+    assert.equal(values[5], null);
+    assert.equal(values[6], entry.notes);
+    return [entry];
+  });
+  const response = await handler.POST(postRequest(entry));
+  assert.equal(response.status, 201);
+  assert.deepEqual((await response.json()).data, [entry]);
+});
+
+test('muscle mass API rejects nonpositive values, non-kilogram units, and scale bounds', async () => {
+  const handler = route('biometrics', async () => { throw new Error('Unexpected query'); });
+  const entry = { date: '2026-10-31', metric_type: 'muscle_mass', value: 56.25, unit: 'kg' };
+  for (const invalid of [{ value: 0 }, { value: -1 }, { value: null }, { unit: 'g' }, { unit: 'lbs' }, { scale_min: 0, scale_max: 100 }]) {
+    assert.equal((await handler.POST(postRequest({ ...entry, ...invalid }))).status, 400);
+  }
+});
+
+test('muscle mass CSV export and import preserve kilograms and notes', async () => {
+  const entry = { date: '2026-10-31', metric_type: 'muscle_mass', value: 56.25, unit: 'kg', notes: 'Scale reading' };
+  const exported = await route('export', async () => [entry]).GET(new NextRequest('http://localhost/api/export?dataType=biometric'));
+  assert.equal(exported.status, 200);
+  const csvData = await exported.text();
+  assert.match(csvData, /2026-10-31,muscle_mass,56.25,kg,Scale reading,,/);
+  let queries = 0;
+  const handler = route('import', async (_text, values) => {
+    queries++;
+    assert.equal(values[1], 'muscle_mass');
+    assert.equal(values[2], 56.25);
+    assert.equal(values[3], 'kg');
+    assert.equal(values[6], entry.notes);
+    return [];
+  });
+  const response = await handler.POST(postRequest({ dataType: 'biometric', csvData }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).imported, 1);
+  assert.equal(queries, 1);
+});
+
+test('muscle mass CSV import skips nonpositive values and non-kilogram units', async () => {
+  let queries = 0;
+  const handler = route('import', async () => { queries++; return []; });
+  const response = await handler.POST(postRequest({
+    dataType: 'biometric',
+    csvData: 'date,metric_type,value,unit\n2026-10-31,muscle_mass,0,kg\n2026-10-31,muscle_mass,-1,kg\n2026-10-31,muscle_mass,56000,g\n2026-10-31,muscle_mass,120,lbs',
+  }));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.imported, 0);
+  assert.equal(result.skipped, 4);
+  assert.equal(queries, 0);
+});
+
+test('body composition plots actual percentages and a shared weight/muscle mass axis in either display unit', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const weight = loadModule('lib/weight.ts').exports;
+  const healthRisk = loadModule('lib/healthRisk.ts').exports;
+  const biometrics = [
+    { date: '2026-10-28', metric_type: 'weight', value: 80, unit: 'kg' },
+    { date: '2026-10-28', metric_type: 'muscle_mass', value: 56, unit: 'kg' },
+    { date: '2026-10-28', metric_type: 'body_fat_percentage', value: 20, unit: '%' },
+    { date: '2026-10-29', metric_type: 'muscle_mass', value: 56.3, unit: 'kg' },
+    { date: '2026-10-30', metric_type: 'waistline', value: 85, unit: 'cm' },
+    { date: '2026-10-31', metric_type: 'weight', value: weight.kilogramsToPounds(79), unit: 'lbs' },
+    { date: '2026-10-31', metric_type: 'muscle_mass', value: 56.3, unit: 'kg' },
+    { date: '2026-10-31', metric_type: 'body_fat_percentage', value: 19, unit: '%' },
+  ];
+
+  for (const unit of ['kg', 'lbs']) {
+    const charts = [];
+    let currentChart;
+    const container = ({ children }) => children ?? null;
+    const captureChart = ({ data, children }) => {
+      currentChart = { data, axes: [], lines: [] };
+      charts.push(currentChart);
+      return children;
+    };
+    const recharts = {
+      LineChart: captureChart, ComposedChart: captureChart,
+      XAxis: container, CartesianGrid: container, Legend: container,
+      ResponsiveContainer: container, ReferenceArea: container,
+      YAxis: (props) => { currentChart.axes.push(props); return null; },
+      Line: (props) => { currentChart.lines.push(props); return null; },
+      Tooltip: ({ content }) => { currentChart.tooltip = content; return null; },
+    };
+    const Chart = loadModule('components/HealthMetricsChart.tsx', {
+      recharts, '@/lib/weight': weight, '@/lib/healthRisk': healthRisk,
+    }).exports.default;
+    renderToStaticMarkup(React.createElement(Chart, {
+      biometrics, profile: { height: 175, height_unit: 'cm' }, rangeYears: 'all', weightDisplayUnit: unit,
+    }));
+    const composition = charts.find((chart) => chart.lines.some((line) => line.dataKey === 'muscleMass'));
+    assert.ok(composition);
+    assert.deepEqual(composition.lines.map((line) => line.dataKey), ['bodyFatPercentage', 'muscleMass', 'weight']);
+    assert.equal(composition.lines[0].yAxisId, 'percentage');
+    assert.equal(composition.lines[1].yAxisId, 'mass');
+    assert.equal(composition.lines[2].yAxisId, 'mass');
+    assert.equal(composition.axes.find((axis) => axis.yAxisId === 'percentage').tickFormatter(15), '15%');
+    assert.equal(composition.axes.find((axis) => axis.yAxisId === 'mass').orientation, 'right');
+    assert.equal(composition.data.length, 3);
+    assert.equal(composition.data[0].bodyFatPercentage, 20);
+    assert.equal(composition.data[2].bodyFatPercentage, 19);
+    const displayMass = (value) => unit === 'lbs' ? Number(weight.kilogramsToPounds(value).toFixed(1)) : value;
+    assert.equal(composition.data[0].muscleMass, displayMass(56));
+    assert.equal(composition.data[0].weight, displayMass(80));
+    assert.equal(composition.data[2].weight, displayMass(79));
+    assert.equal(composition.data[1].weight, undefined);
+    assert.equal(composition.data[1].bodyFatPercentage, undefined);
+    const tooltip = renderToStaticMarkup(React.cloneElement(composition.tooltip, {
+      active: true,
+      payload: [
+        { dataKey: 'bodyFatPercentage', name: 'Body Fat %', value: 15.2, color: '#06b6d4', payload: composition.data[0] },
+        { dataKey: 'muscleMass', name: 'Muscle Mass', value: displayMass(56), color: '#16a34a', payload: composition.data[0] },
+        { dataKey: 'weight', name: 'Body Weight', value: displayMass(80), color: '#3b82f6', payload: composition.data[0] },
+      ],
+    }));
+    assert.match(tooltip, /15\.2%/);
+    assert.ok(tooltip.includes(`${displayMass(56).toFixed(1)} ${unit}`));
+    assert.ok(tooltip.includes(`${displayMass(80).toFixed(1)} ${unit}`));
+    assert.doesNotMatch(tooltip, /Athletic|Fitness|High Risk/);
+  }
 });
 
 test('weight display conversion round-trips between kilograms and pounds', () => {
@@ -477,6 +676,14 @@ test('summary colors distinguish calorie balance and contextualize weight direct
 
   assert.equal(getCalorieBalanceTone(300), 'green');
   assert.equal(getCalorieBalanceTone(0), 'blue');
+  assert.equal(getCalorieBalanceTone(-100), 'blue');
+  assert.equal(getCalorieBalanceTone(100), 'blue');
+  assert.equal(getCalorieBalanceTone(101), 'green');
+  assert.equal(getCalorieBalanceTone(500), 'green');
+  assert.equal(getCalorieBalanceTone(501), 'yellow');
+  assert.equal(getCalorieBalanceTone(-101), 'yellow');
+  assert.equal(getCalorieBalanceTone(-300), 'yellow');
+  assert.equal(getCalorieBalanceTone(-301), 'red');
   assert.equal(getCalorieBalanceTone(-200), 'yellow');
   assert.equal(getCalorieBalanceTone(-400), 'red');
   assert.equal(getCalorieBalanceTone(700), 'yellow');

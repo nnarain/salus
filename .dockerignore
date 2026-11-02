@@ -47,6 +47,9 @@ DOCKER.md
 *.swo
 *~
 
+# MCP server (built separately)
+mcp
+
 # Temporary files
 tmp
 temp

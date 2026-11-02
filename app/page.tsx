@@ -25,6 +25,7 @@ import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
 import { estimateProteinTargetGrams } from '@/lib/nutritionGoals';
 import {
+  CALORIE_BALANCE_TOLERANCE_KCAL,
   createSampleThirtyDayWeightTrend,
   getCalorieBalanceTone,
   getSevenDayCalorieSummary,
@@ -34,10 +35,10 @@ import {
 import { calculateHealthRiskIndicator } from '@/lib/healthRisk';
 
 const SUMMARY_TONE_STYLES = {
-  green: { description: 'text-xs text-green-700 dark:text-green-400 mt-1', border: 'border-green-200 dark:border-green-700' },
-  blue: { description: 'text-xs text-gray-500 dark:text-gray-400 mt-1', border: 'border-blue-200 dark:border-blue-700' },
-  yellow: { description: 'text-xs text-amber-700 dark:text-amber-400 mt-1', border: 'border-yellow-200 dark:border-yellow-700' },
-  red: { description: 'text-xs text-red-700 dark:text-red-400 mt-1', border: 'border-red-200 dark:border-red-700' },
+  green: { value: 'text-green-700 dark:text-green-400', description: 'text-xs text-green-700 dark:text-green-400 mt-1', border: 'border-green-200 dark:border-green-700' },
+  blue: { value: 'text-blue-700 dark:text-blue-400', description: 'text-xs text-gray-500 dark:text-gray-400 mt-1', border: 'border-blue-200 dark:border-blue-700' },
+  yellow: { value: 'text-amber-700 dark:text-amber-400', description: 'text-xs text-amber-700 dark:text-amber-400 mt-1', border: 'border-yellow-200 dark:border-yellow-700' },
+  red: { value: 'text-red-700 dark:text-red-400', description: 'text-xs text-red-700 dark:text-red-400 mt-1', border: 'border-red-200 dark:border-red-700' },
 };
 
 // Helper function to determine waist-to-height ratio border color
@@ -94,6 +95,10 @@ export default function Home() {
   const latestWeightEntry = useMemo(() => biometrics
     .filter((entry) => entry.metric_type === 'weight' && entry.value > 0)
     .sort((first, second) => second.date.localeCompare(first.date))[0], [biometrics]);
+  const latestVisceralFat = biometrics
+    .filter((entry) => entry.metric_type === 'visceral_fat_level' && Number.isFinite(entry.value) && entry.value >= 0)
+    .sort((first, second) => second.date.localeCompare(first.date)
+      || (second.created_at ?? '').localeCompare(first.created_at ?? ''))[0];
   const proteinTargetGrams = latestWeightEntry && (profile?.age === undefined || profile.age >= 18)
     ? estimateProteinTargetGrams(latestWeightEntry.unit === 'lbs'
       ? poundsToKilograms(latestWeightEntry.value)
@@ -132,8 +137,13 @@ export default function Home() {
       ? `${sevenDayCalories.daysLogged}/7 days logged · need at least 5 days to estimate balance`
       : estimatedDailyBalance === null
         ? `${sevenDayCalories.daysLogged}/7 days logged · maintenance estimate unavailable`
-        : `${estimatedDailyBalance > 0 ? `Estimated deficit ~${estimatedDailyBalance}` : estimatedDailyBalance < 0 ? `Estimated surplus ~${Math.abs(estimatedDailyBalance)}` : 'At estimated maintenance'} kcal/day · ${sevenDayCalories.daysLogged}/7 days logged${profile?.daily_calorie_target ? ` · target ${profile.daily_calorie_target} kcal/day` : ''}`;
+        : `${sevenDayCalories.daysLogged}/7 days logged${profile?.daily_calorie_target ? ` · target ${profile.daily_calorie_target} kcal/day` : ''}`;
   const calorieBalanceTone = getCalorieBalanceTone(estimatedDailyBalance);
+  const calorieBalanceLabel = estimatedDailyBalance === null
+    ? 'Balance unavailable'
+    : Math.abs(estimatedDailyBalance) <= CALORIE_BALANCE_TOLERANCE_KCAL
+      ? 'Near maintenance'
+      : estimatedDailyBalance > 0 ? 'Estimated deficit' : 'Estimated surplus';
   const weightTrendTone = getWeightTrendTone(thirtyDayWeightTrend.differenceKg, currentHealthRisk);
   const riskContext = currentHealthRisk === null
     ? 'health risk context unavailable'
@@ -365,28 +375,17 @@ export default function Home() {
         </div>
 
         {/* Key Metrics Display */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+        <section aria-label="Key metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           <StatCard
-            title="Lowest Weight (Last 7 Days)"
-            value={lowestWeight !== null
-              ? (weightDisplayUnit === 'lbs' ? kilogramsToPounds(lowestWeight) : lowestWeight).toFixed(1)
-              : 'N/A'}
-            unit={lowestWeight !== null ? weightDisplayUnit : undefined}
-            description="Minimum weight recorded in the past week"
+            title="Visceral Fat Level"
+            value={latestVisceralFat ? latestVisceralFat.value.toLocaleString() : 'N/A'}
+            unit={latestVisceralFat ? 'level' : undefined}
+            description={latestVisceralFat
+              ? `Latest measurement · ${latestVisceralFat.scale_min != null && latestVisceralFat.scale_max != null
+                ? `Device range ${latestVisceralFat.scale_min} to ${latestVisceralFat.scale_max}`
+                : 'Device range not recorded'}`
+              : 'Add a visceral fat measurement'}
             loading={loading}
-            icon={
-              <svg
-                className="w-6 h-6 text-blue-600 dark:text-blue-400"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
-              </svg>
-            }
           />
           <StatCard
             title="Waist to Height Ratio"
@@ -444,38 +443,67 @@ export default function Home() {
             }
           />
           <StatCard
-            title="Estimated Maintenance (TDEE)"
-            value={calorieEstimate ? calorieEstimate.caloriesKcal.toLocaleString() : 'N/A'}
-            unit={calorieEstimate ? 'kcal/day' : undefined}
-            description={calorieEstimate
+            title="Lowest Weight (Last 7 Days)"
+            value={lowestWeight !== null
+              ? (weightDisplayUnit === 'lbs' ? kilogramsToPounds(lowestWeight) : lowestWeight).toFixed(1)
+              : 'N/A'}
+            unit={lowestWeight !== null ? weightDisplayUnit : undefined}
+            description="Minimum weight recorded in the past week"
+            loading={loading}
+            icon={
+              <svg
+                className="w-6 h-6 text-blue-600 dark:text-blue-400"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
+              </svg>
+            }
+          />
+          <StatCard
+            title="Calorie Balance (7-Day Avg)"
+            value={estimatedDailyBalance !== null ? `~${Math.abs(estimatedDailyBalance).toLocaleString()}` : 'N/A'}
+            unit={estimatedDailyBalance !== null ? 'kcal/day' : undefined}
+            valueColor={SUMMARY_TONE_STYLES[calorieBalanceTone].value}
+            description={`${calorieEstimate
               ? calorieEstimate.source === 'logged_data'
                 ? `Trend estimate · ${calorieEstimate.daysCovered} days of data`
                 : `Formula estimate · latest weight ${calorieEstimate.weightDate
                   ? new Date(`${calorieEstimate.weightDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
                   : 'recorded'}`
-              : calorieEstimateUnavailableDescription}
-            loading={loading}
-            onInfoClick={() => setIsCalorieEstimateInfoModalOpen(true)}
-            icon={
-              <svg className="h-6 w-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2m6.36.64-1.42 1.42M21 12h-2m-.64 6.36-1.42-1.42M12 21v-2m-6.36-.64 1.42-1.42M3 12h2m.64-6.36 1.42 1.42M8 16h8l-1.1-1.65a5 5 0 10-5.8 0L8 16zm1 2h6m-5 2h4" />
-              </svg>
-            }
-          />
-          <StatCard
-            title="Average Calories (7 Days)"
-            value={sevenDayCalories.averageIntakeKcal?.toLocaleString() ?? 'N/A'}
-            unit={sevenDayCalories.averageIntakeKcal !== undefined ? 'kcal/day' : undefined}
-            description={calorieBalanceDescription}
-            descriptionColor={SUMMARY_TONE_STYLES[calorieBalanceTone].description}
+              : calorieEstimateUnavailableDescription} · ${calorieBalanceDescription}`}
             borderColor={SUMMARY_TONE_STYLES[calorieBalanceTone].border}
             loading={loading}
-            icon={
-              <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m0 14h16M7 15l3-4 3 2 5-7" />
-              </svg>
-            }
-          />
+            onInfoClick={() => setIsCalorieEstimateInfoModalOpen(true)}
+          >
+            <p className={`mt-1 text-sm font-medium ${SUMMARY_TONE_STYLES[calorieBalanceTone].value}`}>
+              {calorieBalanceLabel}
+            </p>
+            <dl className="mb-3 mt-4 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+              <div className="min-w-0">
+                <dt className="text-xs text-gray-600 dark:text-gray-400">Average intake (7 days)</dt>
+                <dd className="mt-1 break-words text-2xl font-semibold text-gray-900 dark:text-white">
+                  {sevenDayCalories.averageIntakeKcal?.toLocaleString() ?? 'N/A'}
+                  {sevenDayCalories.averageIntakeKcal !== undefined && (
+                    <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">kcal/day</span>
+                  )}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-gray-600 dark:text-gray-400">Maintenance (TDEE)</dt>
+                <dd className="mt-1 break-words text-2xl font-semibold text-gray-900 dark:text-white">
+                  {calorieEstimate?.caloriesKcal.toLocaleString() ?? 'N/A'}
+                  {calorieEstimate && (
+                    <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">kcal/day</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </StatCard>
           <StatCard
             title="Weight Trend (30-Day Avg)"
             value={thirtyDayWeightTrend.currentAverageKg !== undefined
@@ -494,7 +522,7 @@ export default function Home() {
               </svg>
             }
           />
-        </div>
+        </section>
 
         {/* Action Buttons for Forms */}
         <div className="flex flex-wrap gap-4 justify-center mb-12">
@@ -661,9 +689,22 @@ export default function Home() {
         <Modal
           isOpen={isCalorieEstimateInfoModalOpen}
           onClose={() => setIsCalorieEstimateInfoModalOpen(false)}
-          title="Estimated Daily Energy Expenditure"
+          title="Calorie Balance & Maintenance"
         >
           <div className="space-y-5 text-sm text-gray-700 dark:text-gray-300">
+            <section>
+              <h3 className="mb-2 font-semibold text-gray-900 dark:text-white">Estimated daily balance</h3>
+              <p>
+                Estimated maintenance minus average intake over the last seven days gives the estimated daily deficit or surplus. At least five logged days are needed; missing days are not counted as zero intake.
+              </p>
+              <ul className="mt-2 space-y-1 text-xs">
+                <li>Blue: within {CALORIE_BALANCE_TOLERANCE_KCAL} kcal/day of maintenance, or balance unavailable.</li>
+                <li>Green: deficit over {CALORIE_BALANCE_TOLERANCE_KCAL} and up to 500 kcal/day.</li>
+                <li>Amber: deficit over 500, or surplus over {CALORIE_BALANCE_TOLERANCE_KCAL} and up to 300 kcal/day.</li>
+                <li>Red: surplus over 300 kcal/day.</li>
+              </ul>
+              <p className="mt-2 text-xs">These display bands are not personalized calorie recommendations.</p>
+            </section>
             <section>
               <h3 className="mb-2 font-semibold text-gray-900 dark:text-white">Initial formula estimate</h3>
               <p>

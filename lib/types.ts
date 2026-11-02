@@ -7,10 +7,12 @@ export interface BiometricEntry {
   metric_type: string;
   value: number;
   unit: string;
+  scale_min?: number;
+  scale_max?: number;
   notes?: string;
 }
 
-export type BiometricMetricType = 'weight' | 'waistline' | 'body_fat_percentage';
+export type BiometricMetricType = 'weight' | 'waistline' | 'body_fat_percentage' | 'visceral_fat_level' | 'muscle_mass';
 
 export interface WeightEntry extends Omit<BiometricEntry, 'metric_type' | 'unit'> {
   metric_type: 'weight';

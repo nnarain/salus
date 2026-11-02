@@ -71,6 +71,26 @@
         "/^node --test --test-name-pattern='insight helpers pair prior-day stress' tests/database\\.test\\.cjs$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='visceral fat API entries\\|visceral fat API rejects\\|visceral fat CSV import' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='latest visceral fat range\\|biometrics listing' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='seven-day nutrition average\\|summary colors' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='seven-day nutrition average\\|summary colors' tests/database\\.test\\.cjs && npx eslint app/page\\.tsx components/StatCard\\.tsx lib/dashboardMetrics\\.ts tests/database\\.test\\.cjs && npx tsc --noEmit --pretty false$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='body composition plots' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

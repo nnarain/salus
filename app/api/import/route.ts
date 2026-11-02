@@ -40,14 +40,27 @@ function parseCSV(csvData: string): Record<string, string>[] {
 }
 
 function validateBiometricRecord(record: Record<string, string>): boolean {
-  return !!(
-    record.date &&
-    record.metric_type &&
-    record.value &&
-    record.unit &&
-    !isNaN(parseFloat(record.value)) &&
-    (record.metric_type !== 'weight' || normalizeWeightToKilograms(parseFloat(record.value), record.unit) !== null)
-  );
+  if (!record.date || !record.metric_type || !record.value || !record.unit) return false;
+
+  const value = parseFloat(record.value);
+  const isVisceralFat = record.metric_type === 'visceral_fat_level';
+  if (!Number.isFinite(value) || (isVisceralFat ? value < 0 || record.unit !== 'level' : value <= 0)) return false;
+  if (record.metric_type === 'weight' && normalizeWeightToKilograms(value, record.unit) === null) return false;
+  if (record.metric_type === 'muscle_mass' && record.unit !== 'kg') return false;
+
+  const hasScaleMin = record.scale_min !== undefined && record.scale_min !== '';
+  const hasScaleMax = record.scale_max !== undefined && record.scale_max !== '';
+  if ((hasScaleMin || hasScaleMax) && !isVisceralFat) return false;
+  if (hasScaleMin !== hasScaleMax) return false;
+  if (hasScaleMin && hasScaleMax) {
+    const scaleMin = parseFloat(record.scale_min);
+    const scaleMax = parseFloat(record.scale_max);
+    if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax) || scaleMin >= scaleMax || value < scaleMin || value > scaleMax) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function validateActivityRecord(record: Record<string, string>): boolean {
@@ -104,13 +117,16 @@ export async function POST(request: Request) {
           }
 
           await query(
-            `INSERT INTO biometrics (date, metric_type, value, unit, notes)
-             VALUES ($1, $2, $3, $4, $5)`,
+            `INSERT INTO biometrics (date, metric_type, value, unit, scale_min, scale_max, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [record.date, record.metric_type,
               record.metric_type === 'weight'
                 ? normalizeWeightToKilograms(parseFloat(record.value), record.unit)
                 : parseFloat(record.value),
-              record.metric_type === 'weight' ? 'kg' : record.unit, record.notes || null],
+              record.metric_type === 'weight' ? 'kg' : record.unit,
+              record.scale_min ? parseFloat(record.scale_min) : null,
+              record.scale_max ? parseFloat(record.scale_max) : null,
+              record.notes || null],
           );
           result.imported++;
         } else if (dataType === 'activity') {

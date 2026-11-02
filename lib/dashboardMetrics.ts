@@ -18,6 +18,8 @@ export interface ThirtyDayWeightTrend {
 
 export type SummaryTone = 'green' | 'blue' | 'yellow' | 'red';
 
+export const CALORIE_BALANCE_TOLERANCE_KCAL = 100;
+
 function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -34,9 +36,9 @@ function utcToday(today: Date): Date {
 
 export function getCalorieBalanceTone(estimatedBalanceKcal: number | null): SummaryTone {
   if (estimatedBalanceKcal === null) return 'blue';
-  if (estimatedBalanceKcal >= 100 && estimatedBalanceKcal <= 500) return 'green';
+  if (estimatedBalanceKcal > CALORIE_BALANCE_TOLERANCE_KCAL && estimatedBalanceKcal <= 500) return 'green';
   if (estimatedBalanceKcal > 500) return 'yellow';
-  if (estimatedBalanceKcal >= -100) return 'blue';
+  if (estimatedBalanceKcal >= -CALORIE_BALANCE_TOLERANCE_KCAL) return 'blue';
   if (estimatedBalanceKcal >= -300) return 'yellow';
   return 'red';
 }

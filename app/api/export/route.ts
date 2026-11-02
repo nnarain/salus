@@ -9,7 +9,7 @@ function formatCSV(data: (BiometricEntry | ActivityEntry | StressEntry)[], dataT
     // Return empty CSV with headers
     switch (dataType) {
       case 'biometric':
-        return 'date,metric_type,value,unit,notes\n';
+        return 'date,metric_type,value,unit,notes,scale_min,scale_max\n';
       case 'activity':
         return 'date,activity_name,activity_type,effort_level,duration_minutes,notes\n';
       case 'stress':
@@ -24,9 +24,10 @@ function formatCSV(data: (BiometricEntry | ActivityEntry | StressEntry)[], dataT
   switch (dataType) {
     case 'biometric': {
       csvContent = 'date,metric_type,value,unit,notes\n';
+      csvContent = 'date,metric_type,value,unit,notes,scale_min,scale_max\n';
       const biometrics = data as BiometricEntry[];
       biometrics.forEach((entry) => {
-        csvContent += `${entry.date},${entry.metric_type},${entry.value},${entry.unit},${entry.notes || ''}\n`;
+        csvContent += `${entry.date},${entry.metric_type},${entry.value},${entry.unit},${entry.notes || ''},${entry.scale_min ?? ''},${entry.scale_max ?? ''}\n`;
       });
       break;
     }
