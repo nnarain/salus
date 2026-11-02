@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -20,6 +21,8 @@ interface NutritionChartProps {
   loading: boolean;
   maintenanceEstimate: CalorieEstimate | null;
   dailyCalorieTarget?: number;
+  proteinTargetGrams?: number;
+  proteinTargetWeightDate?: string;
 }
 
 type NutritionMetric = 'calories_kcal' | 'protein_grams' | 'water_liters';
@@ -50,33 +53,60 @@ function formatDate(date: string): string {
   });
 }
 
-function createSampleEntries(rangeYears: number | 'all'): NutritionEntry[] {
+function createSampleEntries(
+  rangeYears: number | 'all',
+  maintenanceEstimate: CalorieEstimate | null,
+  proteinTargetGrams?: number,
+): NutritionEntry[] {
   const dayCount = rangeYears === 'all' ? 730 : Math.ceil(rangeYears * 365);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const caloriePhases = [-260, -220, -120, -100, 30, 60, 220, 180, 90, 40, -110, -180];
+  const calorieDailyVariation = [-60, 25, 45, -35, 70, -15, -30];
+  const proteinPhases = [-10, -8, -4, 0, 3, 10, 14, 8, 4, 0, -5, -8];
+  const proteinDailyVariation = [-5, 2, 4, -3, 6, 0, -2];
+  const waterDailyPattern = [2100, 2500, 2250, 2800, 1900, 2600, 2300];
+  const calorieBaseline = maintenanceEstimate?.caloriesKcal ?? 2200;
+  const proteinBaseline = proteinTargetGrams ?? 100;
 
   return Array.from({ length: dayCount }, (_, index) => {
     const date = new Date(today);
     date.setDate(date.getDate() - (dayCount - index - 1));
+    const phaseIndex = Math.floor(index / 28) % caloriePhases.length;
+    const dayIndex = index % 7;
     return {
       date: dateToString(date),
-      calories_kcal: 1750 + ((index * 83) % 850),
-      protein_grams: 85 + ((index * 13) % 85),
-      water_ml: 1400 + ((index * 227) % 2300),
+      calories_kcal: Math.round(calorieBaseline + caloriePhases[phaseIndex] + calorieDailyVariation[dayIndex]),
+      protein_grams: Math.max(20, Number((proteinBaseline + proteinPhases[phaseIndex] + proteinDailyVariation[dayIndex]).toFixed(1))),
+      water_ml: waterDailyPattern[dayIndex] + ((phaseIndex % 3) - 1) * 150,
     };
   });
 }
 
-function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dailyCalorieTarget }: NutritionChartProps) {
+function NutritionChart({
+  entries,
+  rangeYears,
+  loading,
+  maintenanceEstimate,
+  dailyCalorieTarget,
+  proteinTargetGrams,
+  proteinTargetWeightDate,
+}: NutritionChartProps) {
   const [selectedMetric, setSelectedMetric] = useState<NutritionMetric>('calories_kcal');
   const metric = METRICS[selectedMetric];
-  const showCalorieTargetLine = dailyCalorieTarget !== undefined && dailyCalorieTarget !== maintenanceEstimate?.caloriesKcal;
+  const hasDailyCalorieTarget = typeof dailyCalorieTarget === 'number' && Number.isFinite(dailyCalorieTarget);
+  const showCalorieTargetLine = hasDailyCalorieTarget && dailyCalorieTarget !== maintenanceEstimate?.caloriesKcal;
+  const proteinTargetDateLabel = proteinTargetWeightDate
+    ? new Date(`${proteinTargetWeightDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : undefined;
 
   const { chartData, hasSampleData } = useMemo(() => {
     if (!entries) return { chartData: [], hasSampleData: false };
 
     const hasSampleData = entries.length === 0;
-    const sourceEntries = hasSampleData ? createSampleEntries(rangeYears) : entries;
+    const sourceEntries = hasSampleData
+      ? createSampleEntries(rangeYears, maintenanceEstimate, proteinTargetGrams)
+      : entries;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let start = new Date(today);
@@ -113,7 +143,7 @@ function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dai
     }
 
     return { chartData, hasSampleData };
-  }, [entries, rangeYears, selectedMetric]);
+  }, [entries, rangeYears, selectedMetric, maintenanceEstimate, proteinTargetGrams]);
 
   if (loading) {
     return (
@@ -134,6 +164,18 @@ function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dai
   }
 
   const tickInterval = Math.max(1, Math.floor(chartData.length / 8));
+  const getBarColor = (value?: number): string => {
+    if (value === undefined) return metric.color;
+    if (selectedMetric === 'calories_kcal' && maintenanceEstimate) {
+      if (value < maintenanceEstimate.caloriesKcal) return '#22c55e';
+      if (value > maintenanceEstimate.caloriesKcal) return '#ef4444';
+      return '#94a3b8';
+    }
+    if (selectedMetric === 'protein_grams' && proteinTargetGrams !== undefined) {
+      return value >= proteinTargetGrams ? '#22c55e' : '#f59e0b';
+    }
+    return metric.color;
+  };
 
   return (
     <section className="rounded-lg bg-white p-8 shadow-lg dark:bg-gray-800">
@@ -174,32 +216,41 @@ function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dai
 
       {selectedMetric === 'calories_kcal' && (
         <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
-          {hasSampleData ? (
-            <span>Estimate and target lines appear with recorded nutrition data.</span>
+          {hasSampleData && <span>Sample bars only; lines and colors use your saved estimates.</span>}
+          {maintenanceEstimate ? (
+            <span className="flex items-center gap-2">
+              <span className="w-5 border-t-[3px] border-cyan-400" />
+              Estimated maintenance: <strong>{maintenanceEstimate.caloriesKcal.toLocaleString()} kcal</strong>
+              <span className="text-xs">({maintenanceEstimate.source === 'logged_data' ? 'trend estimate' : 'formula estimate'})</span>
+            </span>
           ) : (
-            <>
-              {maintenanceEstimate ? (
-                <>
-                  <span>Estimated maintenance: <strong>{maintenanceEstimate.caloriesKcal.toLocaleString()} kcal</strong></span>
-                  <span className="flex items-center gap-2 text-xs">
-                    <span className="w-5 border-t-2 border-dashed border-slate-400" />
-                    {maintenanceEstimate.source === 'logged_data'
-                      ? `Trend estimate · ${maintenanceEstimate.daysCovered} days`
-                      : 'Formula estimate'}
-                  </span>
-                </>
-              ) : (
-                <span>Estimated maintenance: not available</span>
-              )}
-              <span>
-                Daily target: <strong>{dailyCalorieTarget ? `${dailyCalorieTarget.toLocaleString()} kcal` : 'Not set'}</strong>
-              </span>
-              {showCalorieTargetLine && (
-                <span className="flex items-center gap-2 text-xs">
-                  <span className="w-5 border-t-2 border-dashed border-orange-500" />Your target
-                </span>
-              )}
-            </>
+            <span>Estimated maintenance: not available</span>
+          )}
+          <span>Daily target: <strong>{hasDailyCalorieTarget ? `${dailyCalorieTarget.toLocaleString()} kcal` : 'Not set'}</strong></span>
+          {showCalorieTargetLine && (
+            <span className="flex items-center gap-2">
+              <span className="w-5 border-t-[3px] border-violet-500" />Your target
+            </span>
+          )}
+          {!hasSampleData && maintenanceEstimate && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">Green bars are below maintenance; red bars are above.</span>
+          )}
+        </div>
+      )}
+      {selectedMetric === 'protein_grams' && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
+          {hasSampleData && <span>Sample bars only.</span>}
+          {proteinTargetGrams !== undefined ? (
+            <span className="flex items-center gap-2">
+              <span className="w-5 border-t-[3px] border-cyan-400" />
+              Baseline estimate: <strong>{proteinTargetGrams} g/day</strong> at 0.8 g/kg
+              {proteinTargetDateLabel && <span className="text-xs">(weight from {proteinTargetDateLabel})</span>}
+            </span>
+          ) : (
+            <span>Add a weight entry to estimate the adult protein baseline.</span>
+          )}
+          {!hasSampleData && proteinTargetGrams !== undefined && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">Amber is below; green is at or above the estimate.</span>
           )}
         </div>
       )}
@@ -223,23 +274,35 @@ function NutritionChart({ entries, rangeYears, loading, maintenanceEstimate, dai
             labelFormatter={(label) => formatDate(String(label))}
             formatter={(value) => [`${Number(value).toLocaleString()} ${metric.unit}`, metric.label]}
           />
-          {selectedMetric === 'calories_kcal' && !hasSampleData && maintenanceEstimate && (
+          <Bar dataKey="value" name={metric.label} fill={metric.color} maxBarSize={12}>
+            {chartData.map((point) => (
+              <Cell key={point.date} fill={getBarColor(point.value)} />
+            ))}
+          </Bar>
+          {selectedMetric === 'calories_kcal' && maintenanceEstimate && (
             <ReferenceLine
               y={maintenanceEstimate.caloriesKcal}
-              stroke="#94a3b8"
-              strokeDasharray="6 4"
+              stroke="#22d3ee"
+              strokeWidth={3}
               ifOverflow="extendDomain"
             />
           )}
-          {selectedMetric === 'calories_kcal' && !hasSampleData && showCalorieTargetLine && (
+          {selectedMetric === 'calories_kcal' && showCalorieTargetLine && (
             <ReferenceLine
               y={dailyCalorieTarget}
-              stroke="#f97316"
-              strokeDasharray="6 4"
+              stroke="#8b5cf6"
+              strokeWidth={3}
               ifOverflow="extendDomain"
             />
           )}
-          <Bar dataKey="value" name={metric.label} fill={metric.color} maxBarSize={12} />
+          {selectedMetric === 'protein_grams' && proteinTargetGrams !== undefined && (
+            <ReferenceLine
+              y={proteinTargetGrams}
+              stroke="#22d3ee"
+              strokeWidth={3}
+              ifOverflow="extendDomain"
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </section>

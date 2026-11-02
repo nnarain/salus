@@ -40,19 +40,26 @@ function weightInKilograms(entry: BiometricEntry): number {
   return entry.unit === 'lbs' ? poundsToKilograms(entry.value) : entry.value;
 }
 
+export function estimateMaintenanceForWeightKg(profile: UserProfile, weightKg: number): number | null {
+  const heightCm = heightInCentimeters(profile);
+  if (
+    profile.age === undefined || profile.age < 18 || !heightCm || weightKg <= 0 ||
+    !Number.isFinite(weightKg) || !profile.biological_sex || !profile.activity_level
+  ) {
+    return null;
+  }
+
+  const sexAdjustment = profile.biological_sex === 'male' ? 5 : -161;
+  const restingEnergy = 10 * weightKg + 6.25 * heightCm - 5 * profile.age + sexAdjustment;
+  const maintenance = Math.round(restingEnergy * ACTIVITY_MULTIPLIERS[profile.activity_level]);
+  return Number.isFinite(maintenance) && maintenance > 0 ? maintenance : null;
+}
+
 export function estimateMaintenanceFromFormula(
   profile: UserProfile,
   biometrics: BiometricEntry[],
   today = new Date(),
 ): CalorieEstimate | null {
-  const heightCm = heightInCentimeters(profile);
-  if (
-    profile.age === undefined || profile.age < 18 || !heightCm ||
-    !profile.biological_sex || !profile.activity_level
-  ) {
-    return null;
-  }
-
   const todayDate = today.toISOString().slice(0, 10);
   const latestWeight = biometrics
     .filter((entry) => entry.metric_type === 'weight' && entry.value > 0 && entry.date <= todayDate)
@@ -60,11 +67,8 @@ export function estimateMaintenanceFromFormula(
   if (!latestWeight) return null;
 
   const weightKg = weightInKilograms(latestWeight);
-  const sexAdjustment = profile.biological_sex === 'male' ? 5 : -161;
-  const restingEnergy = 10 * weightKg + 6.25 * heightCm - 5 * profile.age + sexAdjustment;
-  const caloriesKcal = Math.round(restingEnergy * ACTIVITY_MULTIPLIERS[profile.activity_level]);
-
-  if (!Number.isFinite(caloriesKcal) || caloriesKcal <= 0) return null;
+  const caloriesKcal = estimateMaintenanceForWeightKg(profile, weightKg);
+  if (caloriesKcal === null) return null;
   return { caloriesKcal, source: 'formula', weightDate: latestWeight.date };
 }
 

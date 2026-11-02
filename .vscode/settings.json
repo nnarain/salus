@@ -55,6 +55,22 @@
         "/^node --test --test-name-pattern='maintenance estimate uses Mifflin' tests/database\\.test\\.cjs && npx eslint app/page\\.tsx lib/calorieEstimate\\.ts tests/database\\.test\\.cjs && npx tsc --noEmit --pretty false$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='30-day weight trend compares monthly averages' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='protein estimate uses the adult RDA baseline' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='maintenance estimate uses Mifflin' tests/database\\.test\\.cjs && npx eslint lib/calorieEstimate\\.ts && npx tsc --noEmit --pretty false$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='insight helpers pair prior-day stress' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

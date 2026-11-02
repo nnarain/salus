@@ -7,15 +7,30 @@ export interface SevenDayCalorieSummary {
   windowDays: 7;
 }
 
-export interface SevenDayWeightTrend {
+export interface ThirtyDayWeightTrend {
   currentAverageKg?: number;
   previousAverageKg?: number;
   differenceKg?: number;
   currentDaysLogged: number;
   previousDaysLogged: number;
+  isSample?: boolean;
 }
 
 export type SummaryTone = 'green' | 'blue' | 'yellow' | 'red';
+
+function dateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function dateOffset(date: Date, days: number): string {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return dateKey(result);
+}
+
+function utcToday(today: Date): Date {
+  return new Date(`${dateKey(today)}T00:00:00Z`);
+}
 
 export function getCalorieBalanceTone(estimatedBalanceKcal: number | null): SummaryTone {
   if (estimatedBalanceKcal === null) return 'blue';
@@ -30,20 +45,6 @@ export function getWeightTrendTone(weightChangeKg: number | undefined, normalize
   if (weightChangeKg === undefined || weightChangeKg === 0 || normalizedRisk === null) return 'blue';
   if (normalizedRisk < 0.33) return weightChangeKg > 0 ? 'green' : 'yellow';
   return weightChangeKg < 0 ? 'green' : 'red';
-}
-
-function dateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function dateOffset(date: Date, days: number): string {
-  const result = new Date(date);
-  result.setUTCDate(result.getUTCDate() + days);
-  return dateKey(result);
-}
-
-function utcToday(today: Date): Date {
-  return new Date(`${dateKey(today)}T00:00:00Z`);
 }
 
 export function getSevenDayCalorieSummary(
@@ -69,13 +70,15 @@ export function getSevenDayCalorieSummary(
   };
 }
 
-export function getSevenDayWeightTrend(
+export function getThirtyDayWeightTrend(
   entries: BiometricEntry[],
   today = new Date(),
-): SevenDayWeightTrend {
-  const endDate = dateKey(utcToday(today));
-  const currentStart = dateOffset(utcToday(today), -6);
-  const previousStart = dateOffset(utcToday(today), -13);
+): ThirtyDayWeightTrend {
+  const todayDate = utcToday(today);
+  const endDate = dateKey(todayDate);
+  const currentStart = dateOffset(todayDate, -29);
+  const previousStart = dateOffset(todayDate, -59);
+  const previousEnd = dateOffset(todayDate, -30);
   const dailyWeights = new Map<string, { totalKg: number; count: number }>();
 
   entries.forEach((entry) => {
@@ -92,7 +95,7 @@ export function getSevenDayWeightTrend(
     .filter(([date]) => date >= currentStart && date <= endDate)
     .map(([, daily]) => daily.totalKg / daily.count);
   const previousDays = Array.from(dailyWeights.entries())
-    .filter(([date]) => date >= previousStart && date < currentStart)
+    .filter(([date]) => date >= previousStart && date <= previousEnd)
     .map(([, daily]) => daily.totalKg / daily.count);
   const currentAverageKg = currentDays.length > 0
     ? currentDays.reduce((sum, value) => sum + value, 0) / currentDays.length
@@ -111,4 +114,27 @@ export function getSevenDayWeightTrend(
     currentDaysLogged: currentDays.length,
     previousDaysLogged: previousDays.length,
   };
+}
+
+export function createSampleThirtyDayWeightTrend(today = new Date()): ThirtyDayWeightTrend {
+  const todayDate = utcToday(today);
+  const readings = [
+    { daysAgo: 58, kilograms: 84.4 },
+    { daysAgo: 51, kilograms: 84.2 },
+    { daysAgo: 44, kilograms: 84.1 },
+    { daysAgo: 37, kilograms: 83.8 },
+    { daysAgo: 29, kilograms: 83.3 },
+    { daysAgo: 22, kilograms: 83.1 },
+    { daysAgo: 15, kilograms: 82.8 },
+    { daysAgo: 8, kilograms: 82.5 },
+    { daysAgo: 1, kilograms: 82.3 },
+  ];
+  const entries = readings.map(({ daysAgo, kilograms }) => ({
+    date: dateOffset(todayDate, -daysAgo),
+    metric_type: 'weight',
+    value: kilograms,
+    unit: 'kg',
+  }));
+
+  return { ...getThirtyDayWeightTrend(entries, today), isSample: true };
 }

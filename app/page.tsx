@@ -18,13 +18,17 @@ import HealthMetricsChart from '@/components/HealthMetricsChart';
 import WeeklyActivityChart from '@/components/WeeklyActivityChart';
 import WeeklyStressChart from '@/components/WeeklyStressChart';
 import SleepDurationChart from '@/components/SleepDurationChart';
+import CalorieWeightInsightChart from '@/components/CalorieWeightInsightChart';
+import SleepStressInsightChart from '@/components/SleepStressInsightChart';
 import type { ActivityEntry, BiometricEntry, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
+import { estimateProteinTargetGrams } from '@/lib/nutritionGoals';
 import {
+  createSampleThirtyDayWeightTrend,
   getCalorieBalanceTone,
   getSevenDayCalorieSummary,
-  getSevenDayWeightTrend,
+  getThirtyDayWeightTrend,
   getWeightTrendTone,
 } from '@/lib/dashboardMetrics';
 import { calculateHealthRiskIndicator } from '@/lib/healthRisk';
@@ -46,7 +50,6 @@ function getWaistHeightBorderColor(ratio: number | null): string {
 }
 
 // Helper function to determine body fat percentage border color
-// For simplicity, using general ranges (can be refined based on gender if needed)
 function getBodyFatBorderColor(percentage: number | null): string {
   if (percentage === null) return 'border-blue-200 dark:border-blue-700';
   // Essential fat range
@@ -88,8 +91,21 @@ export default function Home() {
   const [weightDisplayUnit, setWeightDisplayUnit] = useState<'kg' | 'lbs'>('kg');
   const calorieEstimate = useMemo(() => getMaintenanceEstimate(profile ?? {}, nutritionEntries ?? [], biometrics),
     [profile, nutritionEntries, biometrics]);
+  const latestWeightEntry = useMemo(() => biometrics
+    .filter((entry) => entry.metric_type === 'weight' && entry.value > 0)
+    .sort((first, second) => second.date.localeCompare(first.date))[0], [biometrics]);
+  const proteinTargetGrams = latestWeightEntry && (profile?.age === undefined || profile.age >= 18)
+    ? estimateProteinTargetGrams(latestWeightEntry.unit === 'lbs'
+      ? poundsToKilograms(latestWeightEntry.value)
+      : latestWeightEntry.value)
+    : undefined;
   const sevenDayCalories = useMemo(() => getSevenDayCalorieSummary(nutritionEntries ?? []), [nutritionEntries]);
-  const sevenDayWeightTrend = useMemo(() => getSevenDayWeightTrend(biometrics), [biometrics]);
+  const actualThirtyDayWeightTrend = useMemo(() => getThirtyDayWeightTrend(biometrics), [biometrics]);
+  const hasSampleWeightTrend = actualThirtyDayWeightTrend.currentDaysLogged === 0
+    && actualThirtyDayWeightTrend.previousDaysLogged === 0;
+  const thirtyDayWeightTrend = hasSampleWeightTrend
+    ? createSampleThirtyDayWeightTrend()
+    : actualThirtyDayWeightTrend;
   const currentHealthRisk = calculateHealthRiskIndicator(
     bodyFatPercentage ?? undefined,
     waistHeightRatio ?? undefined,
@@ -118,7 +134,7 @@ export default function Home() {
         ? `${sevenDayCalories.daysLogged}/7 days logged · maintenance estimate unavailable`
         : `${estimatedDailyBalance > 0 ? `Estimated deficit ~${estimatedDailyBalance}` : estimatedDailyBalance < 0 ? `Estimated surplus ~${Math.abs(estimatedDailyBalance)}` : 'At estimated maintenance'} kcal/day · ${sevenDayCalories.daysLogged}/7 days logged${profile?.daily_calorie_target ? ` · target ${profile.daily_calorie_target} kcal/day` : ''}`;
   const calorieBalanceTone = getCalorieBalanceTone(estimatedDailyBalance);
-  const weightTrendTone = getWeightTrendTone(sevenDayWeightTrend.differenceKg, currentHealthRisk);
+  const weightTrendTone = getWeightTrendTone(thirtyDayWeightTrend.differenceKg, currentHealthRisk);
   const riskContext = currentHealthRisk === null
     ? 'health risk context unavailable'
     : currentHealthRisk < 0.33
@@ -126,11 +142,11 @@ export default function Home() {
       : currentHealthRisk < 0.67
         ? 'moderate-risk context'
         : 'higher-risk context';
-  const weightTrendDescription = sevenDayWeightTrend.differenceKg === undefined
-    ? `Weigh-ins: ${sevenDayWeightTrend.currentDaysLogged}/7 this week, ${sevenDayWeightTrend.previousDaysLogged}/7 last week · need 2 days in each`
-    : `${sevenDayWeightTrend.differenceKg < 0 ? 'Down' : sevenDayWeightTrend.differenceKg > 0 ? 'Up' : 'Unchanged'} ${Math.abs(weightDisplayUnit === 'lbs'
-      ? kilogramsToPounds(sevenDayWeightTrend.differenceKg)
-      : sevenDayWeightTrend.differenceKg).toFixed(1)} ${weightDisplayUnit} vs prior week · ${riskContext} · ${sevenDayWeightTrend.currentDaysLogged}/7 weigh-in days${currentHealthRisk !== null && currentHealthRisk < 0.33 && sevenDayWeightTrend.differenceKg > 0 ? ' · weight alone cannot confirm muscle gain' : ''}`;
+  const weightTrendDescription = thirtyDayWeightTrend.differenceKg === undefined
+    ? `${hasSampleWeightTrend ? 'Sample preview · ' : ''}Weigh-ins: ${thirtyDayWeightTrend.currentDaysLogged}/30 days this period, ${thirtyDayWeightTrend.previousDaysLogged}/30 prior · need 2 in each`
+    : `${hasSampleWeightTrend ? 'Sample preview · ' : ''}${thirtyDayWeightTrend.differenceKg < 0 ? 'Down' : thirtyDayWeightTrend.differenceKg > 0 ? 'Up' : 'Unchanged'} ${Math.abs(weightDisplayUnit === 'lbs'
+      ? kilogramsToPounds(thirtyDayWeightTrend.differenceKg)
+      : thirtyDayWeightTrend.differenceKg).toFixed(1)} ${weightDisplayUnit} vs prior 30 days · ${riskContext} · ${thirtyDayWeightTrend.currentDaysLogged}/30 weigh-in days${currentHealthRisk !== null && currentHealthRisk < 0.33 && thirtyDayWeightTrend.differenceKg > 0 ? ' · weight alone cannot confirm muscle gain' : ''}`;
 
   // Fetch biometrics and profile data
   const fetchData = async () => {
@@ -461,13 +477,13 @@ export default function Home() {
             }
           />
           <StatCard
-            title="Weight Trend (7-Day Avg)"
-            value={sevenDayWeightTrend.currentAverageKg !== undefined
+            title="Weight Trend (30-Day Avg)"
+            value={thirtyDayWeightTrend.currentAverageKg !== undefined
               ? (weightDisplayUnit === 'lbs'
-                ? kilogramsToPounds(sevenDayWeightTrend.currentAverageKg)
-                : sevenDayWeightTrend.currentAverageKg).toFixed(1)
+                ? kilogramsToPounds(thirtyDayWeightTrend.currentAverageKg)
+                : thirtyDayWeightTrend.currentAverageKg).toFixed(1)
               : 'N/A'}
-            unit={sevenDayWeightTrend.currentAverageKg !== undefined ? weightDisplayUnit : undefined}
+            unit={thirtyDayWeightTrend.currentAverageKg !== undefined ? weightDisplayUnit : undefined}
             description={weightTrendDescription}
             descriptionColor={SUMMARY_TONE_STYLES[weightTrendTone].description}
             borderColor={SUMMARY_TONE_STYLES[weightTrendTone].border}
@@ -734,6 +750,8 @@ export default function Home() {
                 loading={loading}
                 maintenanceEstimate={calorieEstimate}
                 dailyCalorieTarget={profile?.daily_calorie_target}
+                proteinTargetGrams={proteinTargetGrams}
+                proteinTargetWeightDate={latestWeightEntry?.date}
               />
             </div>
             <div className="mt-6">
@@ -747,37 +765,22 @@ export default function Home() {
             </div>
           </>
         ) : (
-          <section className="rounded-lg bg-white p-8 shadow-lg dark:bg-gray-800">
-            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Sleep &amp; stress patterns</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Cross-metric trend · {activeChartRangeYears === 'all' ? 'All available data' : `Last ${activeChartRangeYears} ${activeChartRangeYears === 1 ? 'year' : 'years'}`}
-                </p>
-              </div>
-            </div>
-            <div className="relative h-[360px] overflow-hidden rounded-md border border-gray-200 dark:border-gray-700" aria-label="Sleep and stress insight plot placeholder">
-              <div className="absolute inset-0 grid grid-rows-4">
-                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
-                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
-                <div className="border-b border-dashed border-gray-200 dark:border-gray-700" />
-                <div />
-              </div>
-              <div className="absolute inset-0 grid grid-cols-6">
-                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
-                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
-                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
-                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
-                <div className="border-r border-dashed border-gray-100 dark:border-gray-800" />
-                <div />
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="rounded-md bg-white/80 px-4 py-2 text-sm text-gray-500 backdrop-blur dark:bg-gray-800/80 dark:text-gray-400">
-                  No combined sleep and stress insight yet
-                </span>
-              </div>
-            </div>
-          </section>
+          <div className="space-y-6">
+            <CalorieWeightInsightChart
+              nutritionEntries={nutritionEntries}
+              biometrics={biometrics}
+              profile={profile}
+              rangeYears={activeChartRangeYears}
+              weightDisplayUnit={weightDisplayUnit}
+              loading={loading}
+            />
+            <SleepStressInsightChart
+              sleepEntries={sleepEntries}
+              stressEntries={stressEntries}
+              rangeYears={activeChartRangeYears}
+              age={profile?.age}
+            />
+          </div>
         )}
 
         {/* Footer */}

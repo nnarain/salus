@@ -356,6 +356,16 @@ test('nutrition entries reject negative values and invalid dates before querying
   assert.equal((await handler.POST(postRequest({ ...validEntry, date: '2026-02-30' }))).status, 400);
 });
 
+test('protein estimate uses the adult RDA baseline with an optional multiplier', () => {
+  const { estimateProteinTargetGrams } = loadModule('lib/nutritionGoals.ts').exports;
+
+  assert.equal(estimateProteinTargetGrams(70), 56);
+  assert.equal(estimateProteinTargetGrams(82.4), 66);
+  assert.equal(estimateProteinTargetGrams(70, 1.6), 112);
+  assert.throws(() => estimateProteinTargetGrams(0), /Weight must be a positive finite number/);
+  assert.throws(() => estimateProteinTargetGrams(70, 0), /Protein multiplier must be a positive finite number/);
+});
+
 test('maintenance estimate uses Mifflin-St Jeor and the selected activity multiplier', () => {
   const weight = loadModule('lib/weight.ts').exports;
   const { estimateMaintenanceFromFormula } = loadModule('lib/calorieEstimate.ts', {
@@ -437,22 +447,27 @@ test('seven-day nutrition average uses only recorded days and reports coverage',
   assert.equal(summary.windowDays, 7);
 });
 
-test('seven-day weight trend compares daily averages and converts pounds to kilograms', () => {
-  const { getSevenDayWeightTrend } = loadModule('lib/dashboardMetrics.ts', {
+test('30-day weight trend compares monthly averages and converts pounds to kilograms', () => {
+  const { getThirtyDayWeightTrend, createSampleThirtyDayWeightTrend } = loadModule('lib/dashboardMetrics.ts', {
     '@/lib/weight': loadModule('lib/weight.ts').exports,
   }).exports;
   const weights = [
-    { date: '2026-10-20', metric_type: 'weight', value: 180, unit: 'lbs' },
-    { date: '2026-10-22', metric_type: 'weight', value: 179, unit: 'lbs' },
+    { date: '2026-09-28', metric_type: 'weight', value: 180, unit: 'lbs' },
+    { date: '2026-10-02', metric_type: 'weight', value: 178, unit: 'lbs' },
     { date: '2026-10-29', metric_type: 'weight', value: 80, unit: 'kg' },
     { date: '2026-10-31', metric_type: 'weight', value: 79.5, unit: 'kg' },
   ];
-  const trend = getSevenDayWeightTrend(weights, new Date('2026-11-01T12:00:00Z'));
+  const trend = getThirtyDayWeightTrend(weights, new Date('2026-11-01T12:00:00Z'));
 
   assert.equal(trend.currentAverageKg, 79.75);
   assert.equal(trend.previousDaysLogged, 2);
   assert.equal(trend.currentDaysLogged, 2);
   assert.ok(trend.differenceKg < 0);
+
+  const sampleTrend = createSampleThirtyDayWeightTrend(new Date('2026-11-01T12:00:00Z'));
+  assert.equal(sampleTrend.isSample, true);
+  assert.equal(sampleTrend.currentDaysLogged, 5);
+  assert.equal(sampleTrend.previousDaysLogged, 4);
 });
 
 test('summary colors distinguish calorie balance and contextualize weight direction', () => {
@@ -469,6 +484,39 @@ test('summary colors distinguish calorie balance and contextualize weight direct
   assert.equal(getWeightTrendTone(0.3, 0.8), 'red');
   assert.equal(getWeightTrendTone(-0.3, 0.8), 'green');
   assert.equal(getWeightTrendTone(-0.3, null), 'blue');
+});
+
+test('insight helpers pair prior-day stress with wake-date sleep and estimate dated calorie balance', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const calorieEstimate = loadModule('lib/calorieEstimate.ts', { '@/lib/weight': weight }).exports;
+  const sleepSummary = loadModule('lib/sleepSummary.ts').exports;
+  const stressSummary = loadModule('lib/stressSummary.ts').exports;
+  const insights = loadModule('lib/insights.ts', {
+    '@/lib/weight': weight,
+    '@/lib/calorieEstimate': calorieEstimate,
+    '@/lib/sleepSummary': sleepSummary,
+    '@/lib/stressSummary': stressSummary,
+  }).exports;
+  const pairs = insights.pairSleepWithPriorDayStress([
+    { wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00', sleep_duration_minutes: 420 },
+  ], [
+    { date: '2026-10-30', stress_level: 8 },
+  ]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0].stressDate, '2026-10-30');
+  assert.equal(pairs[0].wakeDate, '2026-10-31');
+  assert.equal(pairs[0].sleepHours, 7);
+
+  const balance = insights.buildDailyCalorieBalance([
+    { date: '2026-10-31', calories_kcal: 2000, protein_grams: 100, water_ml: 2000 },
+  ], [
+    { date: '2026-10-01', metric_type: 'weight', value: 80, unit: 'kg' },
+  ], {
+    age: 35, height: 175, height_unit: 'cm', biological_sex: 'male', activity_level: 'moderate',
+  }, new Date('2026-11-01T12:00:00Z'));
+  assert.equal(balance.length, 1);
+  assert.equal(balance[0].weightDate, '2026-10-01');
+  assert.ok(balance[0].estimatedBalanceKcal > 0);
 });
 
 test('daily stress summaries average multiple readings without filling missing dates', () => {
