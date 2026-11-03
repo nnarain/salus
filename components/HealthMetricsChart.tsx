@@ -1,8 +1,9 @@
 "use client";
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
 import type { BiometricEntry, BodyFatEstimate, UserProfile } from '@/lib/types';
+import { averageBodyFatPercentage } from '@/lib/bodyFat';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
 
@@ -21,6 +22,7 @@ interface ChartDataPoint {
   waistHeightRatio?: number;
   bodyFatPercentage?: number;
   estimatedBodyFatPercentage?: number;
+  averageBodyFatPercentage?: number;
   healthRisk?: number;
   normalizedWaistHeight?: number;
   normalizedBodyFat?: number;
@@ -125,14 +127,28 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit, showRiskInsights = 
 
           return (
             <p key={index} style={{ color }} className="text-sm">
-              {entry.name}: {['weight', 'muscleMass', 'bodyFatPercentage', 'estimatedBodyFatPercentage'].includes(entry.dataKey) ? entry.value.toFixed(1) : entry.value.toFixed(3)}
+              {entry.name}: {['weight', 'muscleMass', 'bodyFatPercentage', 'estimatedBodyFatPercentage', 'averageBodyFatPercentage'].includes(entry.dataKey) ? entry.value.toFixed(1) : entry.value.toFixed(3)}
               {(entry.dataKey === 'weight' || entry.dataKey === 'muscleMass') && ` ${weightDisplayUnit}`}
-              {['bodyFatPercentage', 'estimatedBodyFatPercentage'].includes(entry.dataKey) && '%'}
+              {['bodyFatPercentage', 'estimatedBodyFatPercentage', 'averageBodyFatPercentage'].includes(entry.dataKey) && '%'}
               {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
               <span className="font-semibold">{insight}</span>
             </p>
           );
         })}
+        {!showRiskInsights && (
+          <>
+            {payload[0].payload.averageBodyFatPercentage !== undefined && (
+              <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                {payload[0].payload.bodyFatPercentage !== undefined && payload[0].payload.estimatedBodyFatPercentage !== undefined
+                  ? `Same-day average: (${payload[0].payload.bodyFatPercentage}% logged + ${payload[0].payload.estimatedBodyFatPercentage}% RFM) / 2`
+                  : 'Body fat uses the single available source for this date.'}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+              Risk: {payload[0].payload.healthRisk === undefined ? 'Unavailable' : getRiskLevelDescription(payload[0].payload.healthRisk)}
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -149,38 +165,28 @@ const getRiskLevel = (riskScore: number | undefined): 'low' | 'moderate' | 'high
 
 // Helper function to generate risk zones for reference areas
 interface RiskZone {
-  x1: string;
-  x2: string;
+  x1: number;
+  x2: number;
   level: 'low' | 'moderate' | 'high';
 }
 
 const generateRiskZones = (chartData: ChartDataPoint[]): RiskZone[] => {
   const zones: RiskZone[] = [];
-  let currentZone: RiskZone | null = null;
-
   chartData.forEach((point, index) => {
     const riskLevel = getRiskLevel(point.healthRisk);
-    
     if (!riskLevel) return;
-
-    if (!currentZone || currentZone.level !== riskLevel) {
-      // Start a new zone
-      if (currentZone) {
-        zones.push(currentZone);
-      }
-      currentZone = {
-        x1: point.date,
-        x2: point.date,
-        level: riskLevel
-      };
+    const time = new Date(point.date).getTime();
+    const previous = chartData[index - 1];
+    const next = chartData[index + 1];
+    const x1 = previous ? (new Date(previous.date).getTime() + time) / 2
+      : time - (chartData.length === 1 ? 43200000 : 0);
+    const x2 = next ? (new Date(next.date).getTime() + time) / 2
+      : time + (chartData.length === 1 ? 43200000 : 0);
+    const lastZone = zones[zones.length - 1];
+    if (lastZone?.level === riskLevel && lastZone.x2 === x1) {
+      lastZone.x2 = x2;
     } else {
-      // Extend current zone
-      currentZone.x2 = point.date;
-    }
-
-    // Push the last zone
-    if (index === chartData.length - 1 && currentZone) {
-      zones.push(currentZone);
+      zones.push({ x1, x2, level: riskLevel });
     }
   });
 
@@ -241,6 +247,8 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
 
   // Calculate health risk for each data point
   chartData.forEach((dataPoint) => {
+    dataPoint.averageBodyFatPercentage = averageBodyFatPercentage(
+      dataPoint.bodyFatPercentage, dataPoint.estimatedBodyFatPercentage);
     const healthRisk = calculateHealthRiskIndicator(
       dataPoint.bodyFatPercentage,
       dataPoint.waistHeightRatio
@@ -285,6 +293,7 @@ function HealthMetricsChart({
   rangeYears,
   weightDisplayUnit,
 }: HealthMetricsChartProps) {
+  const [hiddenSeries, setHiddenSeries] = useState<string[]>(['bodyFatPercentage', 'estimatedBodyFatPercentage']);
   const cutoffDate = new Date();
   if (rangeYears !== 'all') {
     cutoffDate.setFullYear(cutoffDate.getFullYear() - rangeYears);
@@ -303,9 +312,7 @@ function HealthMetricsChart({
       muscleMass: point.muscleMass === undefined ? undefined : Number(kilogramsToPounds(point.muscleMass).toFixed(1)),
     }))
     : chartData;
-  const compositionData = weightChartData.filter((point) =>
-    point.weight !== undefined || point.muscleMass !== undefined || point.bodyFatPercentage !== undefined
-    || point.estimatedBodyFatPercentage !== undefined);
+  const compositionData = weightChartData.map((point) => ({ ...point, timestamp: new Date(point.date).getTime() }));
   const hasEstimatedBodyFat = compositionData.some((point) => point.estimatedBodyFatPercentage !== undefined);
   const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
   const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
@@ -318,7 +325,7 @@ function HealthMetricsChart({
       <div className="space-y-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
           <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Health Risk Indicator</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Body Composition</h2>
             <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
           </div>
           <div className="text-center py-12">
@@ -423,88 +430,23 @@ function HealthMetricsChart({
         </ResponsiveContainer>
       </div>
 
-      {/* Weight and Health Risk Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Health Risk Indicator</h2>
-          <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
-        </div>
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8b5cf6' }}></div>
-              <span>Weight ({weightDisplayUnit})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', border: '1px solid rgba(34, 197, 94, 0.5)' }}></div>
-              <span>Low Risk Zone</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', border: '1px solid rgba(251, 191, 36, 0.5)' }}></div>
-              <span>Moderate Risk Zone</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.5)' }}></div>
-              <span>High Risk Zone</span>
-            </div>
-          </div>
-          <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
-            <p>💡 Health Risk: Calculated from body fat % and waist-to-height ratio. Colored zones indicate risk level over time.</p>
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={400}>
-          <LineChart data={weightChartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tick={{ fontSize: 12 }}
-              angle={-45}
-              textAnchor="end"
-              height={80}
-            />
-            <YAxis label={{ value: `Weight (${weightDisplayUnit})`, angle: -90, position: 'insideLeft' }} />
-            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
-            <Legend />
-            {/* Render risk zones as colored overlays */}
-            {generateRiskZones(chartData).map((zone, index) => {
-              const fillColor = 
-                zone.level === 'low' ? 'rgba(34, 197, 94, 0.15)' :
-                zone.level === 'moderate' ? 'rgba(251, 191, 36, 0.15)' :
-                'rgba(239, 68, 68, 0.15)';
-              
-              return (
-                <ReferenceArea
-                  key={`risk-zone-${index}`}
-                  x1={zone.x1}
-                  x2={zone.x2}
-                  fill={fillColor}
-                  fillOpacity={1}
-                />
-              );
-            })}
-            <Line 
-              type="monotone" 
-              dataKey="weight" 
-              stroke="#8b5cf6" 
-              strokeWidth={3} 
-              name="Weight"
-              connectNulls
-              dot={{ r: 4 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Body Composition Chart */}
       <section aria-label="Body composition" className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 sm:p-8">
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Body Composition Metrics</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Weight & Body Composition</h2>
           <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
         </div>
         {compositionData.length === 0 ? (
           <p className="py-12 text-center text-gray-600 dark:text-gray-400">No body fat, muscle mass, or weight measurements in this date range.</p>
         ) : (
           <>
+        <div className="mb-4 flex flex-wrap gap-4 text-xs text-gray-600 dark:text-gray-400">
+          {(['low', 'moderate', 'high'] as const).map((level) => (
+            <span key={level} className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: getRiskLevelColor(level === 'low' ? 0 : level === 'moderate' ? 0.5 : 1) }} />
+              {level === 'low' ? 'Low' : level === 'moderate' ? 'Moderate' : 'High'} Risk Zone
+            </span>
+          ))}
+        </div>
         <div className="mb-2 flex justify-between gap-4 text-xs text-gray-600 dark:text-gray-400">
           <span>Body fat (%)</span>
           <span>Mass ({weightDisplayUnit})</span>
@@ -513,7 +455,13 @@ function HealthMetricsChart({
           <LineChart data={compositionData} margin={{ top: 8, right: 0, bottom: 8, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
-              dataKey="date" 
+              dataKey="timestamp"
+              type="number"
+              scale="time"
+              domain={compositionData.length === 1
+                ? [compositionData[0].timestamp - 43200000, compositionData[0].timestamp + 43200000]
+                : ['dataMin', 'dataMax']}
+              tickFormatter={(value: number) => new Date(value).toISOString().slice(0, 10)}
               tick={{ fontSize: 12 }}
               angle={-45}
               textAnchor="end"
@@ -522,11 +470,38 @@ function HealthMetricsChart({
             <YAxis yAxisId="percentage" orientation="left" width={44} domain={['auto', 'auto']} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value}%`} />
             <YAxis yAxisId="mass" orientation="right" width={52} domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
             <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} showRiskInsights={false} />} />
-            <Legend />
+            <Legend content={() => (
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 pt-2 text-sm">
+                {[
+                  { key: 'weight', name: 'Body Weight', color: '#3b82f6' },
+                  { key: 'muscleMass', name: 'Muscle Mass', color: '#16a34a' },
+                  { key: 'averageBodyFatPercentage', name: 'Body Fat - Average', color: '#0891b2' },
+                  { key: 'bodyFatPercentage', name: 'Body Fat - Logged', color: '#06b6d4' },
+                  ...(hasEstimatedBodyFat ? [{ key: 'estimatedBodyFatPercentage', name: 'Body Fat - Estimated (RFM)', color: '#d97706' }] : []),
+                ].map((series) => (
+                  <button key={series.key} type="button" aria-pressed={!hiddenSeries.includes(series.key)}
+                    onClick={() => setHiddenSeries((hidden) => hidden.includes(series.key)
+                      ? hidden.filter((key) => key !== series.key) : [...hidden, series.key])}
+                    className="flex min-h-8 items-center gap-2 rounded-sm px-1 focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{ opacity: hiddenSeries.includes(series.key) ? 0.5 : 1 }}>
+                    <span className="w-4 border-t-2" style={{ borderColor: series.color }} />
+                    {series.name}
+                  </button>
+                ))}
+              </div>
+            )} />
+            {generateRiskZones(chartData).map((zone, index) => (
+              <ReferenceArea key={`risk-zone-${index}`} yAxisId="mass" x1={zone.x1} x2={zone.x2}
+                fill={getRiskLevelColor(zone.level === 'low' ? 0 : zone.level === 'moderate' ? 0.5 : 1)} fillOpacity={0.12} />
+            ))}
+            <Line yAxisId="percentage" type="linear" dataKey="averageBodyFatPercentage"
+              stroke="#0891b2" strokeWidth={3} name="Body Fat - Average"
+              hide={hiddenSeries.includes('averageBodyFatPercentage')} connectNulls dot={{ r: 4 }} />
             <Line
               yAxisId="percentage"
               type="linear"
               dataKey="bodyFatPercentage"
+              hide={hiddenSeries.includes('bodyFatPercentage')}
               stroke="#06b6d4"
               strokeWidth={2}
               name="Body Fat - Logged"
@@ -538,6 +513,7 @@ function HealthMetricsChart({
                 yAxisId="percentage"
                 type="linear"
                 dataKey="estimatedBodyFatPercentage"
+                hide={hiddenSeries.includes('estimatedBodyFatPercentage')}
                 stroke="#d97706"
                 strokeWidth={2}
                 strokeDasharray="6 4"
@@ -550,6 +526,7 @@ function HealthMetricsChart({
               yAxisId="mass"
               type="linear"
               dataKey="muscleMass"
+              hide={hiddenSeries.includes('muscleMass')}
               stroke="#16a34a"
               strokeWidth={2}
               name="Muscle Mass"
@@ -560,6 +537,7 @@ function HealthMetricsChart({
               yAxisId="mass"
               type="linear"
               dataKey="weight"
+              hide={hiddenSeries.includes('weight')}
               stroke="#3b82f6"
               strokeWidth={2}
               strokeDasharray="5 3"

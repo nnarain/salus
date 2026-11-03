@@ -489,6 +489,16 @@ test('muscle mass CSV import skips nonpositive values and non-kilogram units', a
   assert.equal(queries, 0);
 });
 
+test('body composition averages available body fat sources without inventing missing values', () => {
+  const { averageBodyFatPercentage } = loadModule('lib/bodyFat.ts').exports;
+  assert.equal(averageBodyFatPercentage(20, 24), 22);
+  assert.equal(averageBodyFatPercentage(20), 20);
+  assert.equal(averageBodyFatPercentage(undefined, 24), 24);
+  assert.equal(averageBodyFatPercentage(), undefined);
+  assert.equal(averageBodyFatPercentage(NaN, 24), 24);
+  assert.equal(averageBodyFatPercentage(0, 100), undefined);
+});
+
 test('body composition plots actual percentages and a shared weight/muscle mass axis in either display unit', () => {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
@@ -510,37 +520,49 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     let currentChart;
     const container = ({ children }) => children ?? null;
     const captureChart = ({ data, children }) => {
-      currentChart = { data, axes: [], lines: [] };
+      currentChart = { data, axes: [], lines: [], zones: [] };
       charts.push(currentChart);
       return children;
     };
     const recharts = {
       LineChart: captureChart, ComposedChart: captureChart,
       XAxis: container, CartesianGrid: container, Legend: container,
-      ResponsiveContainer: container, ReferenceArea: container,
+      ResponsiveContainer: container,
+      ReferenceArea: (props) => { currentChart.zones.push(props); return null; },
       YAxis: (props) => { currentChart.axes.push(props); return null; },
       Line: (props) => { currentChart.lines.push(props); return null; },
       Tooltip: ({ content }) => { currentChart.tooltip = content; return null; },
     };
     const Chart = loadModule('components/HealthMetricsChart.tsx', {
       recharts, '@/lib/weight': weight, '@/lib/healthRisk': healthRisk,
+      '@/lib/bodyFat': loadModule('lib/bodyFat.ts').exports,
     }).exports.default;
     renderToStaticMarkup(React.createElement(Chart, {
       biometrics, profile: { height: 175, height_unit: 'cm' }, rangeYears: 'all', weightDisplayUnit: unit,
-      bodyFatEstimates: withEstimate ? [{ date: '2026-10-30', percentage: 22.8, method: 'rfm' }] : [],
+      bodyFatEstimates: withEstimate ? [
+        { date: '2026-10-28', percentage: 24, method: 'rfm' },
+        { date: '2026-10-30', percentage: 22.8, method: 'rfm' },
+      ] : [],
     }));
     const composition = charts.find((chart) => chart.lines.some((line) => line.dataKey === 'muscleMass'));
     assert.ok(composition);
+    assert.equal(charts.length, 2);
     assert.deepEqual(composition.lines.map((line) => line.dataKey), withEstimate
-      ? ['bodyFatPercentage', 'estimatedBodyFatPercentage', 'muscleMass', 'weight']
-      : ['bodyFatPercentage', 'muscleMass', 'weight']);
+      ? ['averageBodyFatPercentage', 'bodyFatPercentage', 'estimatedBodyFatPercentage', 'muscleMass', 'weight']
+      : ['averageBodyFatPercentage', 'bodyFatPercentage', 'muscleMass', 'weight']);
+    assert.equal(composition.lines[0].hide, false);
+    assert.equal(composition.lines.find((line) => line.dataKey === 'bodyFatPercentage').hide, true);
+    assert.ok(composition.zones.length > 0);
+    assert.ok(composition.zones.every((zone) => zone.yAxisId === 'mass' && zone.x2 > zone.x1));
+    assert.equal(composition.data[0].averageBodyFatPercentage, withEstimate ? 22 : 20);
+    assert.equal(composition.data[0].healthRisk, Number(healthRisk.calculateHealthRiskIndicator(20).toFixed(3)));
     assert.equal(composition.lines[0].yAxisId, 'percentage');
     assert.equal(composition.lines.find((line) => line.dataKey === 'muscleMass').yAxisId, 'mass');
     assert.equal(composition.lines.find((line) => line.dataKey === 'weight').yAxisId, 'mass');
     assert.equal(composition.axes.find((axis) => axis.yAxisId === 'percentage').tickFormatter(15), '15%');
     assert.equal(composition.axes.find((axis) => axis.yAxisId === 'mass').orientation, 'right');
-    const lastIndex = withEstimate ? 3 : 2;
-    assert.equal(composition.data.length, withEstimate ? 4 : 3);
+    const lastIndex = 3;
+    assert.equal(composition.data.length, 4);
     assert.equal(composition.data[0].bodyFatPercentage, 20);
     assert.equal(composition.data[lastIndex].bodyFatPercentage, 19);
     const displayMass = (value) => unit === 'lbs' ? Number(weight.kilogramsToPounds(value).toFixed(1)) : value;
@@ -554,8 +576,10 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
       assert.equal(estimateLine.yAxisId, 'percentage');
       assert.equal(estimateLine.strokeDasharray, '6 4');
       assert.equal(estimateLine.name, 'Body Fat - Estimated (RFM)');
+      assert.equal(estimateLine.hide, true);
       assert.equal(composition.data[2].estimatedBodyFatPercentage, 22.8);
       assert.equal(composition.data[2].bodyFatPercentage, undefined);
+      assert.equal(composition.data[2].averageBodyFatPercentage, 22.8);
       assert.equal(composition.data[2].normalizedBodyFat, undefined);
       assert.equal(composition.data[2].averagedNormalizedRisk, undefined);
       const waistRisk = healthRisk.calculateHealthRiskIndicator(undefined, composition.data[2].waistHeightRatio);
@@ -574,7 +598,21 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     assert.match(tooltip, /22\.8%/);
     assert.ok(tooltip.includes(`${displayMass(56).toFixed(1)} ${unit}`));
     assert.ok(tooltip.includes(`${displayMass(80).toFixed(1)} ${unit}`));
-    assert.doesNotMatch(tooltip, /Athletic|Fitness|High Risk/);
+    assert.doesNotMatch(tooltip, /Athletic|Fitness/);
+    assert.match(tooltip, /Low Risk/);
+    assert.match(tooltip, withEstimate ? /Same-day average/ : /single available source/);
+
+    for (const entries of [biometrics.slice(0, 3), biometrics.slice(0, 4)]) {
+      renderToStaticMarkup(React.createElement(Chart, {
+        biometrics: entries, profile: null, rangeYears: 'all', weightDisplayUnit: unit,
+      }));
+      const edgeChart = charts[charts.length - 1];
+      assert.equal(edgeChart.zones.length, 1);
+      assert.ok(edgeChart.zones[0].x2 > edgeChart.zones[0].x1);
+      if (entries.length === 4) {
+        assert.ok(edgeChart.zones[0].x2 < new Date(entries[3].date).getTime());
+      }
+    }
   }
 });
 
