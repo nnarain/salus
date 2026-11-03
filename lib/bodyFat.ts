@@ -1,5 +1,12 @@
 import type { BiometricEntry, BodyFatEstimate, UserProfile } from '@/lib/types';
 
+export function averageBodyFatPercentage(logged?: number, estimated?: number): number | undefined {
+  const values = [logged, estimated].filter((value): value is number =>
+    value !== undefined && Number.isFinite(value) && value > 0 && value < 100);
+  return values.length === 0 ? undefined
+    : Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1));
+}
+
 export function estimateRelativeFatMass(
   waist: Pick<BiometricEntry, 'value' | 'unit'>,
   profile: UserProfile | null,
