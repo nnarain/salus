@@ -22,6 +22,37 @@ export default function BodyFatInfoModal({ isOpen, onClose }: BodyFatInfoModalPr
           </p>
         </section>
 
+        <section>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Relative Fat Mass (RFM)
+          </h3>
+          <p className="text-gray-700 dark:text-gray-300">
+            RFM estimates body-fat percentage from waist circumference, height, and biological sex
+            for adults aged 20 and over. With height and waist in the same units, the equations are
+            64 - 20 x (height / waist) for men and 76 - 20 x (height / waist) for women.
+          </p>
+          <p className="mt-3 text-gray-700 dark:text-gray-300">
+            Logged body fat may itself be an estimate from a scale or another method. RFM is a
+            separate population-based estimate; individual error can be substantial. Neither value
+            is a diagnosis, and averaging the two is not proven to improve accuracy. RFM is not
+            included in the combined health-risk score because it reuses waist-to-height data.
+          </p>
+          <p className="mt-3 text-gray-700 dark:text-gray-300">
+            RFM values are dated to the waist measurement and recalculated using your current
+            profile. Consistent waist measurement matters: the study used the top of the hip bone
+            (iliac crest). The ranges below are general sex-specific reference categories, not
+            population averages or personalized targets; needs vary with age and health.
+          </p>
+          <a
+            href="https://doi.org/10.1038/s41598-018-29362-1"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-block text-blue-600 dark:text-blue-400 underline"
+          >
+            Woolcott and Bergman, Scientific Reports (2018)
+          </a>
+        </section>
+
         {/* Ranges for Men */}
         <section>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">

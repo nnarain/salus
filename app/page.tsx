@@ -20,7 +20,7 @@ import WeeklyStressChart from '@/components/WeeklyStressChart';
 import SleepDurationChart from '@/components/SleepDurationChart';
 import CalorieWeightInsightChart from '@/components/CalorieWeightInsightChart';
 import SleepStressInsightChart from '@/components/SleepStressInsightChart';
-import type { ActivityEntry, BiometricEntry, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
+import type { ActivityEntry, BiometricEntry, BodyFatEstimate, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
 import { estimateProteinTargetGrams } from '@/lib/nutritionGoals';
@@ -51,15 +51,16 @@ function getWaistHeightBorderColor(ratio: number | null): string {
 }
 
 // Helper function to determine body fat percentage border color
-function getBodyFatBorderColor(percentage: number | null): string {
-  if (percentage === null) return 'border-blue-200 dark:border-blue-700';
+function getBodyFatBorderColor(percentage: number | null, sex?: UserProfile['biological_sex']): string {
+  if (percentage === null || !sex) return 'border-blue-200 dark:border-blue-700';
+  const thresholds = sex === 'male' ? [6, 14, 18, 25] : [14, 21, 25, 32];
   // Essential fat range
-  if (percentage < 14) return 'border-blue-200 dark:border-blue-700';
+  if (percentage < thresholds[0]) return 'border-blue-200 dark:border-blue-700';
   // Athletic/Fitness range
-  if (percentage < 18) return 'border-green-200 dark:border-green-700';
-  if (percentage < 25) return 'border-green-300 dark:border-green-600';
+  if (percentage < thresholds[1]) return 'border-green-200 dark:border-green-700';
+  if (percentage < thresholds[2]) return 'border-green-300 dark:border-green-600';
   // Average/Acceptable range
-  if (percentage < 32) return 'border-yellow-200 dark:border-yellow-700';
+  if (percentage < thresholds[3]) return 'border-yellow-200 dark:border-yellow-700';
   // Obese range
   return 'border-orange-200 dark:border-orange-700';
 }
@@ -82,11 +83,19 @@ export default function Home() {
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [biometrics, setBiometrics] = useState<BiometricEntry[]>([]);
+  const [bodyFatEstimates, setBodyFatEstimates] = useState<BodyFatEstimate[]>([]);
   const [activities, setActivities] = useState<ActivityEntry[] | null>(null);
   const [stressEntries, setStressEntries] = useState<StressEntry[] | null>(null);
   const [sleepEntries, setSleepEntries] = useState<SleepEntry[] | null>(null);
   const [nutritionEntries, setNutritionEntries] = useState<NutritionEntry[] | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const latestBodyFatEstimate = bodyFatEstimates
+    .slice().sort((first, second) => second.date.localeCompare(first.date))[0];
+  const latestBodyFatEntry = biometrics
+    .filter((entry) => entry.metric_type === 'body_fat_percentage')
+    .sort((first, second) => second.date.localeCompare(first.date))[0];
+  const bodyFatReference = profile?.biological_sex === 'male' ? 'Reference: 18-24%'
+    : profile?.biological_sex === 'female' ? 'Reference: 25-31%' : null;
   const [defaultChartRangeYears, setDefaultChartRangeYears] = useState<number | 'all'>(2);
   const [activeChartRangeYears, setActiveChartRangeYears] = useState<number | 'all'>(2);
   const [weightDisplayUnit, setWeightDisplayUnit] = useState<'kg' | 'lbs'>('kg');
@@ -166,6 +175,8 @@ export default function Home() {
       // Fetch biometrics data
       const biometricsResponse = await fetch('/api/biometrics');
       const biometricsData = await biometricsResponse.json();
+      setBodyFatEstimates(biometricsResponse.ok && Array.isArray(biometricsData.bodyFatEstimates)
+        ? biometricsData.bodyFatEstimates : []);
 
       const activitiesResponse = await fetch('/api/activities');
       const activitiesData = await activitiesResponse.json();
@@ -422,12 +433,12 @@ export default function Home() {
             unit={bodyFatPercentage !== null ? '%' : undefined}
             description={
               bodyFatPercentage !== null
-                ? 'Latest measurement'
+                ? [latestBodyFatEntry?.date, bodyFatReference].filter(Boolean).join(' · ')
                 : 'Add body fat percentage measurement'
             }
             loading={loading}
             onInfoClick={() => setIsBodyFatInfoModalOpen(true)}
-            borderColor={getBodyFatBorderColor(bodyFatPercentage)}
+            borderColor={getBodyFatBorderColor(bodyFatPercentage, profile?.biological_sex)}
             icon={
               <svg
                 className="w-6 h-6 text-blue-600 dark:text-blue-400"
@@ -441,7 +452,13 @@ export default function Home() {
                 <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
               </svg>
             }
-          />
+          >
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {latestBodyFatEstimate
+                ? `RFM estimate: ${latestBodyFatEstimate.percentage.toFixed(1)}% (${latestBodyFatEstimate.date})`
+                : 'RFM estimate unavailable'}
+            </p>
+          </StatCard>
           <StatCard
             title="Lowest Weight (Last 7 Days)"
             value={lowestWeight !== null
@@ -780,6 +797,7 @@ export default function Home() {
           <>
             <HealthMetricsChart
               biometrics={biometrics}
+              bodyFatEstimates={bodyFatEstimates}
               profile={profile}
               rangeYears={activeChartRangeYears}
               weightDisplayUnit={weightDisplayUnit}

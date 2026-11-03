@@ -10,6 +10,28 @@ Self-hosted personal health tracker built with Next.js 16, PostgreSQL, Tailwind 
 - **Recharts**: Composable charting library for data visualization
 - **TypeScript**: Type-safe development
 
+## Body Fat Estimates
+
+The dashboard separates logged body-fat readings from Relative Fat Mass (RFM)
+estimates. RFM requires a waist measurement in cm or inches and a profile with
+height and units, biological sex, and age 20 or older. Using matching units,
+the equation is `64 - 20 * height / waist` for men and
+`76 - 20 * height / waist` for women. Invalid inputs or results outside 0-100%
+are not shown.
+
+`GET /api/biometrics` returns estimates separately as
+`bodyFatEstimates: [{ date, percentage, method: "rfm" }]`. Estimates use the newest
+waist reading per date and the current profile; changing the profile recalculates
+historical estimates. They are never saved as measured readings, included in CSV
+exports, averaged with logged body fat, or used in the combined health-risk score.
+The `latestScaleRange=true` response remains unchanged.
+
+The chart uses separate logged and dashed RFM series. General sex-specific
+reference ranges are not population averages, diagnoses, or personalized targets.
+RFM is a population-based estimate with potentially substantial individual error;
+consistent waist measurement at the top of the hip bone matters. See
+[Woolcott and Bergman (2018)](https://doi.org/10.1038/s41598-018-29362-1).
+
 ## Getting Started
 
 ### Docker
