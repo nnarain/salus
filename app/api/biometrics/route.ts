@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { normalizeWeightToKilograms } from '@/lib/weight';
-import type { BiometricEntry } from '@/lib/types';
+import { getBodyFatEstimates } from '@/lib/bodyFat';
+import type { BiometricEntry, UserProfile } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -88,7 +89,14 @@ export async function GET(request?: NextRequest) {
         : 'SELECT * FROM biometrics ORDER BY date DESC LIMIT 500',
     );
 
-    return NextResponse.json({ data }, { status: 200 });
+    if (latestScaleRange) return NextResponse.json({ data }, { status: 200 });
+
+    const [profile] = data.some((entry) => entry.metric_type === 'waistline')
+      ? await query<UserProfile>(
+        'SELECT height, height_unit, age, biological_sex FROM user_profile WHERE singleton = TRUE',
+      )
+      : [];
+    return NextResponse.json({ data, bodyFatEstimates: getBodyFatEstimates(data, profile ?? null) }, { status: 200 });
   } catch (error) {
     console.error('Error processing request:', error);
     return NextResponse.json(

@@ -2,12 +2,13 @@
 
 import { memo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
-import type { BiometricEntry, UserProfile } from '@/lib/types';
+import type { BiometricEntry, BodyFatEstimate, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
 
 interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
+  bodyFatEstimates?: BodyFatEstimate[];
   profile: UserProfile | null;
   rangeYears: number | 'all';
   weightDisplayUnit: 'kg' | 'lbs';
@@ -19,6 +20,7 @@ interface ChartDataPoint {
   muscleMass?: number;
   waistHeightRatio?: number;
   bodyFatPercentage?: number;
+  estimatedBodyFatPercentage?: number;
   healthRisk?: number;
   normalizedWaistHeight?: number;
   normalizedBodyFat?: number;
@@ -123,9 +125,9 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit, showRiskInsights = 
 
           return (
             <p key={index} style={{ color }} className="text-sm">
-              {entry.name}: {['weight', 'muscleMass', 'bodyFatPercentage'].includes(entry.dataKey) ? entry.value.toFixed(1) : entry.value.toFixed(3)}
+              {entry.name}: {['weight', 'muscleMass', 'bodyFatPercentage', 'estimatedBodyFatPercentage'].includes(entry.dataKey) ? entry.value.toFixed(1) : entry.value.toFixed(3)}
               {(entry.dataKey === 'weight' || entry.dataKey === 'muscleMass') && ` ${weightDisplayUnit}`}
-              {entry.dataKey === 'bodyFatPercentage' && '%'}
+              {['bodyFatPercentage', 'estimatedBodyFatPercentage'].includes(entry.dataKey) && '%'}
               {entry.dataKey === 'healthRisk' && ` - ${(entry.value * 100).toFixed(0)}%`}
               <span className="font-semibold">{insight}</span>
             </p>
@@ -186,7 +188,7 @@ const generateRiskZones = (chartData: ChartDataPoint[]): RiskZone[] => {
 };
 
 // Process biometric data into chart format
-const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | null): ChartDataPoint[] => {
+const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | null, bodyFatEstimates: BodyFatEstimate[]): ChartDataPoint[] => {
   const dataByDate = new Map<string, ChartDataPoint>();
 
   biometrics.forEach((entry) => {
@@ -224,6 +226,12 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
     } else if (entry.metric_type === 'muscle_mass') {
       dataPoint.muscleMass = Number(entry.value.toFixed(1));
     }
+  });
+
+  bodyFatEstimates.forEach((estimate) => {
+    const dataPoint = dataByDate.get(estimate.date) ?? { date: estimate.date };
+    dataPoint.estimatedBodyFatPercentage = estimate.percentage;
+    dataByDate.set(estimate.date, dataPoint);
   });
 
   // Convert to array and sort by date
@@ -272,6 +280,7 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
 
 function HealthMetricsChart({
   biometrics,
+  bodyFatEstimates = [],
   profile,
   rangeYears,
   weightDisplayUnit,
@@ -283,7 +292,10 @@ function HealthMetricsChart({
   const visibleBiometrics = rangeYears === 'all'
     ? biometrics
     : biometrics.filter((entry) => new Date(entry.date) >= cutoffDate);
-  const chartData = processChartData(visibleBiometrics, profile);
+  const visibleEstimates = rangeYears === 'all'
+    ? bodyFatEstimates
+    : bodyFatEstimates.filter((estimate) => new Date(estimate.date) >= cutoffDate);
+  const chartData = processChartData(visibleBiometrics, profile, visibleEstimates);
   const weightChartData = weightDisplayUnit === 'lbs'
     ? chartData.map((point) => ({
       ...point,
@@ -292,7 +304,9 @@ function HealthMetricsChart({
     }))
     : chartData;
   const compositionData = weightChartData.filter((point) =>
-    point.weight !== undefined || point.muscleMass !== undefined || point.bodyFatPercentage !== undefined);
+    point.weight !== undefined || point.muscleMass !== undefined || point.bodyFatPercentage !== undefined
+    || point.estimatedBodyFatPercentage !== undefined);
+  const hasEstimatedBodyFat = compositionData.some((point) => point.estimatedBodyFatPercentage !== undefined);
   const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
   const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
   const hasAveragedRisk = chartData.some((point) => point.averagedNormalizedRisk !== undefined);
@@ -515,10 +529,23 @@ function HealthMetricsChart({
               dataKey="bodyFatPercentage"
               stroke="#06b6d4"
               strokeWidth={2}
-              name="Body Fat %"
+              name="Body Fat - Logged"
               connectNulls
               dot={{ r: 4 }}
             />
+            {hasEstimatedBodyFat && (
+              <Line
+                yAxisId="percentage"
+                type="linear"
+                dataKey="estimatedBodyFatPercentage"
+                stroke="#d97706"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                name="Body Fat - Estimated (RFM)"
+                connectNulls
+                dot={{ r: 4 }}
+              />
+            )}
             <Line
               yAxisId="mass"
               type="linear"
@@ -542,6 +569,12 @@ function HealthMetricsChart({
             />
           </LineChart>
         </ResponsiveContainer>
+        {profile?.biological_sex && (
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            Adult body-fat reference ({profile.biological_sex === 'male' ? 'men' : 'women'}):{' '}
+            {profile.biological_sex === 'male' ? '18-24%' : '25-31%'}. Not a population average or a diagnosis.
+          </p>
+        )}
           </>
         )}
       </section>

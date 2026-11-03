@@ -91,6 +91,14 @@
         "/^node --test --test-name-pattern='body composition plots' tests/database\\.test\\.cjs$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='RFM\\|biometrics listing\\|latest visceral' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='body composition' tests/database\\.test\\.cjs && npx tsc --noEmit$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

@@ -14,6 +14,12 @@ export interface BiometricEntry {
 
 export type BiometricMetricType = 'weight' | 'waistline' | 'body_fat_percentage' | 'visceral_fat_level' | 'muscle_mass';
 
+export interface BodyFatEstimate {
+  date: string;
+  percentage: number;
+  method: 'rfm';
+}
+
 export interface WeightEntry extends Omit<BiometricEntry, 'metric_type' | 'unit'> {
   metric_type: 'weight';
   unit: 'kg' | 'lbs';

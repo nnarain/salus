@@ -31,6 +31,7 @@ function route(name, query) {
   return loadModule(`app/api/${name}/route.ts`, {
     '@/lib/db': { query },
     '@/lib/weight': weight,
+    '@/lib/bodyFat': loadModule('lib/bodyFat.ts').exports,
   }).exports;
 }
 
@@ -41,6 +42,41 @@ function postRequest(body) {
     body: JSON.stringify(body),
   });
 }
+
+test('RFM estimates use sex-specific adult equations and equivalent measurement units', () => {
+  const { estimateRelativeFatMass, getBodyFatEstimates } = loadModule('lib/bodyFat.ts').exports;
+  const profile = { height: 180, height_unit: 'cm', age: 30, biological_sex: 'male' };
+  const waist = { value: 90, unit: 'cm' };
+  assert.equal(estimateRelativeFatMass(waist, profile), 24);
+  assert.equal(estimateRelativeFatMass(waist, { ...profile, biological_sex: 'female' }), 36);
+  assert.equal(estimateRelativeFatMass({ value: 90 / 2.54, unit: 'inches' }, profile), 24);
+  assert.equal(estimateRelativeFatMass(waist, { ...profile, height: 180 / 2.54, height_unit: 'inches' }), 24);
+  assert.equal(estimateRelativeFatMass(waist, { ...profile, height: 180 / 30.48, height_unit: 'feet' }), 24);
+  for (const invalid of [null, {}, { ...profile, age: 19 }, { ...profile, age: undefined },
+    { ...profile, biological_sex: undefined }, { ...profile, height_unit: undefined },
+    { ...profile, height: 0 }, { ...profile, height: Infinity }]) {
+    assert.equal(estimateRelativeFatMass(waist, invalid), undefined);
+  }
+  for (const invalid of [{ value: 0, unit: 'cm' }, { value: -1, unit: 'cm' },
+    { value: NaN, unit: 'cm' }, { value: Infinity, unit: 'cm' }, { value: 90, unit: 'feet' },
+    { value: 1, unit: 'cm' }]) {
+    assert.equal(estimateRelativeFatMass(invalid, profile), undefined);
+  }
+  const entries = [{ date: '2026-10-31', metric_type: 'waistline', ...waist }, records.biometrics];
+  const original = JSON.stringify(entries);
+  assert.equal(JSON.stringify(getBodyFatEstimates(entries, profile)),
+    JSON.stringify([{ date: '2026-10-31', percentage: 24, method: 'rfm' }]));
+  assert.equal(JSON.stringify(entries), original);
+  const duplicateDate = [
+    { ...entries[0], value: 100, created_at: '2026-10-31T08:00:00Z' },
+    { ...entries[0], value: 90, created_at: '2026-10-31T09:00:00Z' },
+  ];
+  assert.equal(JSON.stringify(getBodyFatEstimates(duplicateDate, profile)),
+    JSON.stringify([{ date: '2026-10-31', percentage: 24, method: 'rfm' }]));
+  assert.equal(JSON.stringify(getBodyFatEstimates(duplicateDate.map((entry) => ({
+    ...entry, created_at: new Date(entry.created_at),
+  })), profile)), JSON.stringify([{ date: '2026-10-31', percentage: 24, method: 'rfm' }]));
+});
 
 test('pool is lazy, requires configuration, and reuses connections across reloads', async () => {
   let count = 0;
@@ -116,7 +152,9 @@ for (const [name, record] of Object.entries(records)) {
     });
     const response = await handler.GET();
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { data: [record] });
+    assert.deepEqual(await response.json(), name === 'biometrics'
+      ? { data: [record], bodyFatEstimates: [] }
+      : { data: [record] });
   });
 
   test(`${name} rejects missing fields without querying`, async () => {
@@ -124,6 +162,29 @@ for (const [name, record] of Object.entries(records)) {
     assert.equal((await handler.POST(postRequest({}))).status, 400);
   });
 }
+
+test('biometrics API returns derived RFM separately without altering logged measurements', async () => {
+  const data = [
+    { date: '2026-10-31', metric_type: 'waistline', value: 90, unit: 'cm' },
+    { date: '2026-10-30', metric_type: 'body_fat_percentage', value: 21, unit: '%' },
+  ];
+  for (const profile of [{ height: 180, height_unit: 'cm', age: 30, biological_sex: 'male' }, null]) {
+    const queries = [];
+    const handler = route('biometrics', async (text) => {
+      queries.push(text);
+      if (text.includes('FROM user_profile')) return profile ? [profile] : [];
+      return data;
+    });
+    const response = await handler.GET();
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      data,
+      bodyFatEstimates: profile ? [{ date: '2026-10-31', percentage: 24, method: 'rfm' }] : [],
+    });
+    assert.equal(queries.length, 2);
+    assert.ok(queries.every((text) => text.startsWith('SELECT')));
+  }
+});
 
 test('latest visceral fat range uses save order and excludes readings without bounds', async () => {
   const saved = { scale_min: 0, scale_max: 15 };
@@ -351,7 +412,7 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     { date: '2026-10-31', metric_type: 'body_fat_percentage', value: 19, unit: '%' },
   ];
 
-  for (const unit of ['kg', 'lbs']) {
+  for (const [unit, withEstimate] of [['kg', false], ['kg', true], ['lbs', false], ['lbs', true]]) {
     const charts = [];
     let currentChart;
     const container = ({ children }) => children ?? null;
@@ -373,33 +434,51 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     }).exports.default;
     renderToStaticMarkup(React.createElement(Chart, {
       biometrics, profile: { height: 175, height_unit: 'cm' }, rangeYears: 'all', weightDisplayUnit: unit,
+      bodyFatEstimates: withEstimate ? [{ date: '2026-10-30', percentage: 22.8, method: 'rfm' }] : [],
     }));
     const composition = charts.find((chart) => chart.lines.some((line) => line.dataKey === 'muscleMass'));
     assert.ok(composition);
-    assert.deepEqual(composition.lines.map((line) => line.dataKey), ['bodyFatPercentage', 'muscleMass', 'weight']);
+    assert.deepEqual(composition.lines.map((line) => line.dataKey), withEstimate
+      ? ['bodyFatPercentage', 'estimatedBodyFatPercentage', 'muscleMass', 'weight']
+      : ['bodyFatPercentage', 'muscleMass', 'weight']);
     assert.equal(composition.lines[0].yAxisId, 'percentage');
-    assert.equal(composition.lines[1].yAxisId, 'mass');
-    assert.equal(composition.lines[2].yAxisId, 'mass');
+    assert.equal(composition.lines.find((line) => line.dataKey === 'muscleMass').yAxisId, 'mass');
+    assert.equal(composition.lines.find((line) => line.dataKey === 'weight').yAxisId, 'mass');
     assert.equal(composition.axes.find((axis) => axis.yAxisId === 'percentage').tickFormatter(15), '15%');
     assert.equal(composition.axes.find((axis) => axis.yAxisId === 'mass').orientation, 'right');
-    assert.equal(composition.data.length, 3);
+    const lastIndex = withEstimate ? 3 : 2;
+    assert.equal(composition.data.length, withEstimate ? 4 : 3);
     assert.equal(composition.data[0].bodyFatPercentage, 20);
-    assert.equal(composition.data[2].bodyFatPercentage, 19);
+    assert.equal(composition.data[lastIndex].bodyFatPercentage, 19);
     const displayMass = (value) => unit === 'lbs' ? Number(weight.kilogramsToPounds(value).toFixed(1)) : value;
     assert.equal(composition.data[0].muscleMass, displayMass(56));
     assert.equal(composition.data[0].weight, displayMass(80));
-    assert.equal(composition.data[2].weight, displayMass(79));
+    assert.equal(composition.data[lastIndex].weight, displayMass(79));
     assert.equal(composition.data[1].weight, undefined);
     assert.equal(composition.data[1].bodyFatPercentage, undefined);
+    if (withEstimate) {
+      const estimateLine = composition.lines.find((line) => line.dataKey === 'estimatedBodyFatPercentage');
+      assert.equal(estimateLine.yAxisId, 'percentage');
+      assert.equal(estimateLine.strokeDasharray, '6 4');
+      assert.equal(estimateLine.name, 'Body Fat - Estimated (RFM)');
+      assert.equal(composition.data[2].estimatedBodyFatPercentage, 22.8);
+      assert.equal(composition.data[2].bodyFatPercentage, undefined);
+      assert.equal(composition.data[2].normalizedBodyFat, undefined);
+      assert.equal(composition.data[2].averagedNormalizedRisk, undefined);
+      const waistRisk = healthRisk.calculateHealthRiskIndicator(undefined, composition.data[2].waistHeightRatio);
+      assert.equal(composition.data[2].healthRisk, Number(waistRisk.toFixed(3)));
+    }
     const tooltip = renderToStaticMarkup(React.cloneElement(composition.tooltip, {
       active: true,
       payload: [
         { dataKey: 'bodyFatPercentage', name: 'Body Fat %', value: 15.2, color: '#06b6d4', payload: composition.data[0] },
+        { dataKey: 'estimatedBodyFatPercentage', name: 'Body Fat - Estimated (RFM)', value: 22.8, color: '#d97706', payload: composition.data[0] },
         { dataKey: 'muscleMass', name: 'Muscle Mass', value: displayMass(56), color: '#16a34a', payload: composition.data[0] },
         { dataKey: 'weight', name: 'Body Weight', value: displayMass(80), color: '#3b82f6', payload: composition.data[0] },
       ],
     }));
     assert.match(tooltip, /15\.2%/);
+    assert.match(tooltip, /22\.8%/);
     assert.ok(tooltip.includes(`${displayMass(56).toFixed(1)} ${unit}`));
     assert.ok(tooltip.includes(`${displayMass(80).toFixed(1)} ${unit}`));
     assert.doesNotMatch(tooltip, /Athletic|Fitness|High Risk/);
