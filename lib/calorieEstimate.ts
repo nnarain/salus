@@ -1,5 +1,6 @@
 import type { BiometricEntry, NutritionEntry, UserProfile } from '@/lib/types';
 import { poundsToKilograms } from '@/lib/weight';
+import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
 
 export type CalorieEstimateSource = 'formula' | 'logged_data';
 
@@ -84,8 +85,9 @@ export function estimateMaintenanceFromHistory(
   windowStart.setUTCDate(windowStart.getUTCDate() - 27);
   const earliestWindowDate = windowStart.toISOString().slice(0, 10);
 
-  const nutrition = nutritionEntries.filter((entry) =>
-    entry.date >= earliestWindowDate && entry.date <= endDate && entry.calories_kcal >= 0,
+  const nutrition = aggregateDailyNutrition(nutritionEntries).filter((entry) =>
+    entry.date >= earliestWindowDate && entry.date <= endDate && entry.calories_kcal !== null
+      && !entry.estimated && !entry.partial,
   );
   const weights = biometrics
     .filter((entry) => entry.metric_type === 'weight' && entry.value > 0 && entry.date >= earliestWindowDate && entry.date <= endDate)
@@ -94,9 +96,7 @@ export function estimateMaintenanceFromHistory(
 
   if (nutrition.length === 0 || weights.length < 4) return null;
 
-  const earliestNutritionDate = nutrition.reduce((earliest, entry) => {
-    return entry.date < earliest ? entry.date : earliest;
-  }, nutrition[0].date);
+  const earliestNutritionDate = nutrition[0].date;
   const firstEvidenceDate = earliestNutritionDate > weights[0].date
     ? earliestNutritionDate
     : weights[0].date;
@@ -104,7 +104,7 @@ export function estimateMaintenanceFromHistory(
   const weightSpanDays = differenceInDays(weights[0].date, weights[weights.length - 1].date);
   if (daysCovered < 14 || weightSpanDays < 14 || nutrition.length / daysCovered < 0.7) return null;
 
-  const caloriesPerDay = nutrition.reduce((sum, entry) => sum + entry.calories_kcal, 0) / nutrition.length;
+  const caloriesPerDay = nutrition.reduce((sum, entry) => sum + entry.calories_kcal!, 0) / nutrition.length;
   const xValues = weights.map((entry) => differenceInDays(weights[0].date, entry.date));
   const yValues = weights.map((entry) => entry.kilograms);
   const xMean = xValues.reduce((sum, value) => sum + value, 0) / xValues.length;

@@ -2,6 +2,7 @@ import type { BiometricEntry, NutritionEntry, SleepEntry, StressEntry, UserProfi
 import { estimateMaintenanceForWeightKg } from '@/lib/calorieEstimate';
 import { aggregateDailySleep } from '@/lib/sleepSummary';
 import { aggregateDailyStress } from '@/lib/stressSummary';
+import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
 import { poundsToKilograms } from '@/lib/weight';
 
 export interface SleepStressPair {
@@ -70,9 +71,9 @@ export function buildDailyCalorieBalance(
       kilograms: entry.unit === 'lbs' ? poundsToKilograms(entry.value) : entry.value,
     }))
     .sort((first, second) => first.date.localeCompare(second.date));
-  const nutrition = nutritionEntries
-    .filter((entry) => entry.date <= endDate && entry.calories_kcal >= 0)
-    .sort((first, second) => first.date.localeCompare(second.date));
+  const nutrition = aggregateDailyNutrition(nutritionEntries)
+    .filter((entry) => entry.date <= endDate && entry.calories_kcal !== null
+      && !entry.estimated && !entry.partial);
 
   let weightIndex = -1;
   return nutrition.map((entry) => {
@@ -82,19 +83,19 @@ export function buildDailyCalorieBalance(
 
     const priorWeight = weights[weightIndex];
     if (!priorWeight || (dateToUtcDay(entry.date) - dateToUtcDay(priorWeight.date)) / 86400000 > maximumWeightAgeDays) {
-      return { date: entry.date, intakeKcal: entry.calories_kcal };
+      return { date: entry.date, intakeKcal: entry.calories_kcal! };
     }
 
     const maintenanceKcal = estimateMaintenanceForWeightKg(profile, priorWeight.kilograms);
     if (maintenanceKcal === null) {
-      return { date: entry.date, intakeKcal: entry.calories_kcal, weightDate: priorWeight.date };
+      return { date: entry.date, intakeKcal: entry.calories_kcal!, weightDate: priorWeight.date };
     }
 
     return {
       date: entry.date,
-      intakeKcal: entry.calories_kcal,
+      intakeKcal: entry.calories_kcal!,
       estimatedMaintenanceKcal: maintenanceKcal,
-      estimatedBalanceKcal: maintenanceKcal - entry.calories_kcal,
+      estimatedBalanceKcal: maintenanceKcal - entry.calories_kcal!,
       weightDate: priorWeight.date,
     };
   });

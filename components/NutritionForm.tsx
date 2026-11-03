@@ -13,6 +13,8 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
     calories_kcal: '',
     protein_grams: '',
     water_liters: '',
+    estimated: false,
+    partial: false,
     notes: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,9 +28,11 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
     try {
       const nutritionData: NutritionEntry = {
         date: formData.date,
-        calories_kcal: Number(formData.calories_kcal),
-        protein_grams: Number(formData.protein_grams),
-        water_ml: Math.round(Number(formData.water_liters) * 1000),
+        calories_kcal: formData.calories_kcal === '' ? null : Number(formData.calories_kcal),
+        protein_grams: formData.protein_grams === '' ? null : Number(formData.protein_grams),
+        water_ml: formData.water_liters === '' ? null : Math.round(Number(formData.water_liters) * 1000),
+        estimated: formData.estimated,
+        partial: formData.partial,
         notes: formData.notes || undefined,
       };
 
@@ -43,8 +47,10 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
         throw new Error(result.error || 'Failed to save nutrition data');
       }
 
-      setMessage({ type: 'success', text: 'Daily nutrition saved successfully!' });
-      setFormData((previous) => ({ ...previous, notes: '' }));
+      setMessage({ type: 'success', text: 'Nutrition entry saved successfully!' });
+      setFormData((previous) => ({
+        ...previous, calories_kcal: '', protein_grams: '', water_liters: '', estimated: false, partial: false, notes: '',
+      }));
       if (onSuccess) setTimeout(onSuccess, 1000);
     } catch (error) {
       setMessage({
@@ -91,7 +97,6 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
             onChange={handleChange}
             min="0"
             step="1"
-            required
             className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
           />
         </div>
@@ -107,7 +112,6 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
             onChange={handleChange}
             min="0"
             step="0.1"
-            required
             className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
           />
         </div>
@@ -123,12 +127,30 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
             onChange={handleChange}
             min="0"
             step="0.1"
-            required
             className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
           />
         </div>
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400">Water is stored in milliliters.</p>
+
+      <div className="flex flex-wrap gap-6">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={formData.estimated}
+            onChange={(event) => setFormData((previous) => ({ ...previous, estimated: event.target.checked }))}
+          />
+          Estimated values
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={formData.partial}
+            onChange={(event) => setFormData((previous) => ({ ...previous, partial: event.target.checked }))}
+          />
+          Partial day
+        </label>
+      </div>
 
       <div>
         <label htmlFor="nutrition-notes" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -149,7 +171,7 @@ export default function NutritionForm({ onSuccess }: NutritionFormProps = {}) {
         disabled={isSubmitting}
         className="w-full rounded-lg bg-lime-600 px-6 py-3 font-semibold text-white transition-colors hover:bg-lime-700 disabled:cursor-not-allowed disabled:bg-gray-400"
       >
-        {isSubmitting ? 'Saving...' : 'Save Daily Nutrition'}
+        {isSubmitting ? 'Saving...' : 'Save Nutrition Entry'}
       </button>
 
       {message && (

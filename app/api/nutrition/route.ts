@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
   try {
     const body: NutritionEntry = await request.json();
 
-    if (!body.date || body.calories_kcal === undefined || body.protein_grams === undefined || body.water_ml === undefined) {
+    if (!body.date) {
       return NextResponse.json(
-        { error: 'Missing required fields: date, calories_kcal, protein_grams, water_ml' },
+        { error: 'Missing required field: date' },
         { status: 400 }
       );
     }
@@ -23,32 +23,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Date must be a valid YYYY-MM-DD date' }, { status: 400 });
     }
 
-    if (!Number.isInteger(body.calories_kcal) || body.calories_kcal < 0) {
+    if (![body.calories_kcal, body.protein_grams, body.water_ml].some((value) => value != null)) {
+      return NextResponse.json({ error: 'At least one nutrition value is required' }, { status: 400 });
+    }
+
+    if (body.calories_kcal != null && (!Number.isInteger(body.calories_kcal) || body.calories_kcal < 0)) {
       return NextResponse.json({ error: 'Calories must be a non-negative whole number' }, { status: 400 });
     }
 
-    if (!Number.isFinite(body.protein_grams) || body.protein_grams < 0) {
+    if (body.protein_grams != null && (!Number.isFinite(body.protein_grams) || body.protein_grams < 0)) {
       return NextResponse.json({ error: 'Protein must be a non-negative number of grams' }, { status: 400 });
     }
 
-    if (!Number.isInteger(body.water_ml) || body.water_ml < 0) {
+    if (body.water_ml != null && (!Number.isInteger(body.water_ml) || body.water_ml < 0)) {
       return NextResponse.json({ error: 'Water must be a non-negative whole number of milliliters' }, { status: 400 });
     }
 
+    if (body.estimated !== undefined && typeof body.estimated !== 'boolean') {
+      return NextResponse.json({ error: 'Estimated must be a boolean' }, { status: 400 });
+    }
+
+    if (body.partial !== undefined && typeof body.partial !== 'boolean') {
+      return NextResponse.json({ error: 'Partial must be a boolean' }, { status: 400 });
+    }
+
     const data = await query<NutritionEntry>(
-      `INSERT INTO nutrition_entries (date, calories_kcal, protein_grams, water_ml, notes)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (date) DO UPDATE SET
-         calories_kcal = EXCLUDED.calories_kcal,
-         protein_grams = EXCLUDED.protein_grams,
-         water_ml = EXCLUDED.water_ml,
-         notes = EXCLUDED.notes
+      `INSERT INTO nutrition_entries
+       (date, calories_kcal, protein_grams, water_ml, estimated, partial, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [body.date, body.calories_kcal, body.protein_grams, body.water_ml, body.notes || null],
+      [body.date, body.calories_kcal ?? null, body.protein_grams ?? null, body.water_ml ?? null,
+        body.estimated ?? false, body.partial ?? false, body.notes || null],
     );
 
     return NextResponse.json(
-      { message: 'Nutrition data saved successfully', data },
+      { message: 'Nutrition entry saved successfully', data },
       { status: 201 }
     );
   } catch (error) {
@@ -63,7 +72,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const data = await query<NutritionEntry>(
-      'SELECT * FROM nutrition_entries ORDER BY date DESC LIMIT 500',
+      'SELECT * FROM nutrition_entries ORDER BY date DESC, created_at DESC LIMIT 5000',
     );
 
     return NextResponse.json({ data }, { status: 200 });

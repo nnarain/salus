@@ -35,9 +35,27 @@ function route(name, query) {
   }).exports;
 }
 
+function entryMutationRoute(name, query) {
+  const mutation = loadModule('lib/entryMutation.ts', {
+    '@/lib/db': { query },
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+  }).exports;
+  return loadModule(`app/api/${name}/[id]/route.ts`, {
+    '@/lib/entryMutation': mutation,
+  }).exports;
+}
+
 function postRequest(body) {
   return new NextRequest('http://localhost/api/test', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function patchRequest(body) {
+  return new NextRequest('http://localhost/api/test', {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -162,6 +180,81 @@ for (const [name, record] of Object.entries(records)) {
     assert.equal((await handler.POST(postRequest({}))).status, 400);
   });
 }
+
+test('all tracked entry routes support validated edits and deletes by UUID', async () => {
+  const id = '68b5c957-4ab8-4b55-945c-8bb4ff694705';
+  const entries = {
+    activities: { date: '2026-10-31', activity_name: 'Run', activity_type: 'cardio', effort_level: 5, duration_minutes: 30 },
+    biometrics: { date: '2026-10-31', metric_type: 'weight', value: 80, unit: 'kg' },
+    nutrition: { date: '2026-10-31', calories_kcal: 2000, protein_grams: 100, water_ml: null, estimated: false, partial: false },
+    sleep: { wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00', sleep_duration_minutes: 480, restedness: null },
+    stress: { date: '2026-10-31', stress_level: 5 },
+  };
+  const tables = { activities: 'activities', biometrics: 'biometrics', nutrition: 'nutrition_entries', sleep: 'sleep_entries', stress: 'stress' };
+
+  for (const [resource, entry] of Object.entries(entries)) {
+    const table = tables[resource];
+    const existing = { id, ...entry, notes: 'before' };
+    const updated = { ...existing, notes: 'corrected' };
+    let updateValues;
+    const handler = entryMutationRoute(resource, async (text, values) => {
+      if (text.startsWith('SELECT')) {
+        assert.equal(text, `SELECT * FROM ${table} WHERE id = $1`);
+        assert.equal(values[0], id);
+        return [existing];
+      }
+      assert.match(text, new RegExp(`UPDATE ${table} SET notes = \\$1 WHERE id = \\$2 RETURNING \\*`));
+      updateValues = values;
+      return [updated];
+    });
+    const response = await handler.PATCH(patchRequest({ notes: 'corrected' }), { params: Promise.resolve({ id }) });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, updated);
+    assert.deepEqual(Array.from(updateValues), ['corrected', id]);
+
+    const deleteHandler = entryMutationRoute(resource, async (text, values) => {
+      assert.equal(text, `DELETE FROM ${table} WHERE id = $1 RETURNING *`);
+      assert.equal(values[0], id);
+      return [existing];
+    });
+    const deleted = await deleteHandler.DELETE(new NextRequest('http://localhost/api/test', { method: 'DELETE' }), {
+      params: Promise.resolve({ id }),
+    });
+    assert.equal(deleted.status, 200);
+    assert.deepEqual((await deleted.json()).data, existing);
+  }
+});
+
+test('entry edit rejects unknown fields and reports missing records', async () => {
+  const id = '68b5c957-4ab8-4b55-945c-8bb4ff694705';
+  const handler = entryMutationRoute('stress', async (text) => {
+    assert.match(text, /SELECT \* FROM stress/);
+    return [];
+  });
+  const unknownField = await handler.PATCH(patchRequest({ id }), { params: Promise.resolve({ id }) });
+  assert.equal(unknownField.status, 400);
+  const missing = await handler.PATCH(patchRequest({ notes: 'updated' }), { params: Promise.resolve({ id }) });
+  assert.equal(missing.status, 404);
+});
+
+test('weight edits normalize supplied units and reject a unit-only reinterpretation', async () => {
+  const id = '68b5c957-4ab8-4b55-945c-8bb4ff694705';
+  const existing = { id, date: '2026-10-31', metric_type: 'weight', value: 80, unit: 'kg' };
+  const calls = [];
+  const handler = entryMutationRoute('biometrics', async (text, values) => {
+    calls.push({ text, values });
+    return text.startsWith('SELECT') ? [existing] : [{ ...existing, value: 160 * 0.45359237 }];
+  });
+  const unitOnly = await handler.PATCH(patchRequest({ unit: 'lbs' }), { params: Promise.resolve({ id }) });
+  assert.equal(unitOnly.status, 400);
+  assert.equal(calls.length, 1);
+
+  const response = await handler.PATCH(patchRequest({ value: 160, unit: 'lbs' }), { params: Promise.resolve({ id }) });
+  assert.equal(response.status, 200);
+  assert.equal(calls[2].values[0], 160 * 0.45359237);
+  assert.equal(calls[2].values[1], 'kg');
+  assert.equal(calls[2].values[2], id);
+});
 
 test('biometrics API returns derived RFM separately without altering logged measurements', async () => {
   const data = [
@@ -577,6 +670,26 @@ test('sleep entry validates duration, times, and restedness before querying', as
   assert.equal((await handler.POST(postRequest({ ...validEntry, restedness: 6 }))).status, 400);
 });
 
+test('sleep entry defaults duration, accepts null restedness, and updates by wake date', async () => {
+  let inserted;
+  const handler = route('sleep', async (text, values) => {
+    inserted = values;
+    assert.match(text, /pg_advisory_xact_lock/);
+    assert.match(text, /UPDATE sleep_entries/);
+    assert.match(text, /WHERE NOT EXISTS \(SELECT 1 FROM updated\)/);
+    return [{ wake_date: values[0], sleep_duration_minutes: values[3], restedness: values[4] }];
+  });
+  const response = await handler.POST(postRequest({
+    wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00', restedness: null,
+  }));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(Array.from(inserted), ['2026-10-31', '23:00', '07:00', 480, null, null]);
+  assert.deepEqual((await response.json()).data, [
+    { wake_date: '2026-10-31', sleep_duration_minutes: 480, restedness: null },
+  ]);
+});
+
 test('sleep duration summaries aggregate by wake date and use age-appropriate target bands', () => {
   const { aggregateDailySleep, getSleepTargetBand } = loadModule('lib/sleepSummary.ts').exports;
   const summaries = aggregateDailySleep([
@@ -595,19 +708,21 @@ test('sleep duration summaries aggregate by wake date and use age-appropriate ta
   assert.equal(getSleepTargetBand(undefined).minimumHours, 7);
 });
 
-test('nutrition entries save daily totals and parameterize notes', async () => {
+test('nutrition entries save independent quality-tagged rows and parameterize notes', async () => {
   const nutrition = {
     date: '2026-10-31',
     calories_kcal: 2150,
     protein_grams: 132.5,
     water_ml: 2400,
+    estimated: true,
+    partial: false,
     notes: 'Training day',
   };
   let inserted;
   const handler = route('nutrition', async (text, values) => {
     inserted = values;
     assert.match(text, /INSERT INTO nutrition_entries/);
-    assert.match(text, /ON CONFLICT \(date\) DO UPDATE/);
+    assert.doesNotMatch(text, /ON CONFLICT/);
     assert.match(text, /RETURNING \*/);
     return [nutrition];
   });
@@ -618,7 +733,9 @@ test('nutrition entries save daily totals and parameterize notes', async () => {
   assert.equal(inserted[1], nutrition.calories_kcal);
   assert.equal(inserted[2], nutrition.protein_grams);
   assert.equal(inserted[3], nutrition.water_ml);
-  assert.equal(inserted[4], nutrition.notes);
+  assert.equal(inserted[4], nutrition.estimated);
+  assert.equal(inserted[5], nutrition.partial);
+  assert.equal(inserted[6], nutrition.notes);
   assert.deepEqual((await response.json()).data, [nutrition]);
 });
 
@@ -632,6 +749,19 @@ test('nutrition entries reject negative values and invalid dates before querying
   assert.equal((await handler.POST(postRequest({ ...validEntry, protein_grams: -0.1 }))).status, 400);
   assert.equal((await handler.POST(postRequest({ ...validEntry, water_ml: -1 }))).status, 400);
   assert.equal((await handler.POST(postRequest({ ...validEntry, date: '2026-02-30' }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ date: validEntry.date }))).status, 400);
+});
+
+test('nutrition entries allow water-only logging and store omitted values as null', async () => {
+  let inserted;
+  const handler = route('nutrition', async (_text, values) => {
+    inserted = values;
+    return [{ date: values[0], calories_kcal: values[1], protein_grams: values[2], water_ml: values[3] }];
+  });
+  const response = await handler.POST(postRequest({ date: '2026-10-31', water_ml: 600 }));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(Array.from(inserted), ['2026-10-31', null, null, 600, false, false, null]);
 });
 
 test('protein estimate uses the adult RDA baseline with an optional multiplier', () => {
@@ -648,6 +778,7 @@ test('maintenance estimate uses Mifflin-St Jeor and the selected activity multip
   const weight = loadModule('lib/weight.ts').exports;
   const { estimateMaintenanceFromFormula } = loadModule('lib/calorieEstimate.ts', {
     '@/lib/weight': weight,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
   const estimate = estimateMaintenanceFromFormula({
     age: 35,
@@ -678,6 +809,7 @@ test('maintenance estimate calibrates after covered calorie and weight history e
   const weight = loadModule('lib/weight.ts').exports;
   const { estimateMaintenanceFromHistory, getMaintenanceEstimate } = loadModule('lib/calorieEstimate.ts', {
     '@/lib/weight': weight,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
   const start = new Date('2026-10-18T00:00:00Z');
   const nutrition = Array.from({ length: 15 }, (_, dayOffset) => {
@@ -710,9 +842,40 @@ test('maintenance estimate calibrates after covered calorie and weight history e
   assert.equal(estimateMaintenanceFromHistory(nutrition.slice(0, 9), weights, new Date('2026-11-01T00:00:00Z')), null);
 });
 
+test('maintenance estimates aggregate meals and exclude estimated or partial days from coverage', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const { estimateMaintenanceFromHistory } = loadModule('lib/calorieEstimate.ts', {
+    '@/lib/weight': weight,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
+  }).exports;
+  const start = new Date('2026-10-18T00:00:00Z');
+  const nutrition = Array.from({ length: 15 }, (_, dayOffset) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + dayOffset);
+    const day = date.toISOString().slice(0, 10);
+    return [
+      { date: day, calories_kcal: 1100 },
+      { date: day, calories_kcal: 1100, estimated: dayOffset === 13, partial: dayOffset === 14 },
+    ];
+  }).flat();
+  const weights = [0, 3, 7, 10, 14].map((dayOffset) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + dayOffset);
+    return {
+      date: date.toISOString().slice(0, 10),
+      metric_type: 'weight', value: 80 - dayOffset * 0.05, unit: 'kg',
+    };
+  });
+  const estimate = estimateMaintenanceFromHistory(nutrition, weights, new Date('2026-11-01T00:00:00Z'));
+
+  assert.equal(estimate.caloriesKcal, 2585);
+  assert.equal(estimate.nutritionDays, 13);
+});
+
 test('seven-day nutrition average uses only recorded days and reports coverage', () => {
   const { getSevenDayCalorieSummary } = loadModule('lib/dashboardMetrics.ts', {
     '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
   const summary = getSevenDayCalorieSummary([
     { date: '2026-10-30', calories_kcal: 2000, protein_grams: 100, water_ml: 2000 },
@@ -725,9 +888,26 @@ test('seven-day nutrition average uses only recorded days and reports coverage',
   assert.equal(summary.windowDays, 7);
 });
 
+test('seven-day calorie coverage aggregates meals and excludes estimated or partial days', () => {
+  const { getSevenDayCalorieSummary } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
+  }).exports;
+  const summary = getSevenDayCalorieSummary([
+    { date: '2026-10-31', calories_kcal: 1000 },
+    { date: '2026-10-31', calories_kcal: 1200 },
+    { date: '2026-11-01', calories_kcal: 1800, partial: true },
+    { date: '2026-10-30', calories_kcal: 2100, estimated: true },
+  ], new Date('2026-11-01T12:00:00Z'));
+
+  assert.equal(summary.averageIntakeKcal, 2200);
+  assert.equal(summary.daysLogged, 1);
+});
+
 test('30-day weight trend compares monthly averages and converts pounds to kilograms', () => {
   const { getThirtyDayWeightTrend, createSampleThirtyDayWeightTrend } = loadModule('lib/dashboardMetrics.ts', {
     '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
   const weights = [
     { date: '2026-09-28', metric_type: 'weight', value: 180, unit: 'lbs' },
@@ -751,6 +931,7 @@ test('30-day weight trend compares monthly averages and converts pounds to kilog
 test('summary colors distinguish calorie balance and contextualize weight direction', () => {
   const { getCalorieBalanceTone, getWeightTrendTone } = loadModule('lib/dashboardMetrics.ts', {
     '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
 
   assert.equal(getCalorieBalanceTone(300), 'green');
@@ -774,7 +955,11 @@ test('summary colors distinguish calorie balance and contextualize weight direct
 
 test('insight helpers pair prior-day stress with wake-date sleep and estimate dated calorie balance', () => {
   const weight = loadModule('lib/weight.ts').exports;
-  const calorieEstimate = loadModule('lib/calorieEstimate.ts', { '@/lib/weight': weight }).exports;
+  const nutritionSummary = loadModule('lib/nutritionSummary.ts').exports;
+  const calorieEstimate = loadModule('lib/calorieEstimate.ts', {
+    '@/lib/weight': weight,
+    '@/lib/nutritionSummary': nutritionSummary,
+  }).exports;
   const sleepSummary = loadModule('lib/sleepSummary.ts').exports;
   const stressSummary = loadModule('lib/stressSummary.ts').exports;
   const insights = loadModule('lib/insights.ts', {
@@ -782,6 +967,7 @@ test('insight helpers pair prior-day stress with wake-date sleep and estimate da
     '@/lib/calorieEstimate': calorieEstimate,
     '@/lib/sleepSummary': sleepSummary,
     '@/lib/stressSummary': stressSummary,
+    '@/lib/nutritionSummary': nutritionSummary,
   }).exports;
   const pairs = insights.pairSleepWithPriorDayStress([
     { wake_date: '2026-10-31', bedtime: '23:00', wake_time: '07:00', sleep_duration_minutes: 420 },
@@ -794,13 +980,16 @@ test('insight helpers pair prior-day stress with wake-date sleep and estimate da
   assert.equal(pairs[0].sleepHours, 7);
 
   const balance = insights.buildDailyCalorieBalance([
-    { date: '2026-10-31', calories_kcal: 2000, protein_grams: 100, water_ml: 2000 },
+    { date: '2026-10-31', calories_kcal: 1000 },
+    { date: '2026-10-31', calories_kcal: 1000 },
+    { date: '2026-11-01', calories_kcal: 2400, partial: true },
   ], [
     { date: '2026-10-01', metric_type: 'weight', value: 80, unit: 'kg' },
   ], {
     age: 35, height: 175, height_unit: 'cm', biological_sex: 'male', activity_level: 'moderate',
   }, new Date('2026-11-01T12:00:00Z'));
   assert.equal(balance.length, 1);
+  assert.equal(balance[0].intakeKcal, 2000);
   assert.equal(balance[0].weightDate, '2026-10-01');
   assert.ok(balance[0].estimatedBalanceKcal > 0);
 });

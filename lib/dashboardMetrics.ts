@@ -1,5 +1,6 @@
 import type { BiometricEntry, NutritionEntry } from '@/lib/types';
 import { poundsToKilograms } from '@/lib/weight';
+import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
 
 export interface SevenDayCalorieSummary {
   averageIntakeKcal?: number;
@@ -55,16 +56,13 @@ export function getSevenDayCalorieSummary(
 ): SevenDayCalorieSummary {
   const endDate = dateKey(utcToday(today));
   const startDate = dateOffset(utcToday(today), -6);
-  const dailyCalories = new Map<string, number>();
+  const dailyCalories = aggregateDailyNutrition(entries)
+    .filter((entry) => entry.date >= startDate && entry.date <= endDate
+      && entry.calories_kcal !== null && !entry.estimated && !entry.partial)
+    .map((entry) => entry.calories_kcal!);
 
-  entries.forEach((entry) => {
-    if (entry.date >= startDate && entry.date <= endDate) {
-      dailyCalories.set(entry.date, entry.calories_kcal);
-    }
-  });
-
-  const daysLogged = dailyCalories.size;
-  const totalCalories = Array.from(dailyCalories.values()).reduce((sum, value) => sum + value, 0);
+  const daysLogged = dailyCalories.length;
+  const totalCalories = dailyCalories.reduce((sum, value) => sum + value, 0);
   return {
     averageIntakeKcal: daysLogged > 0 ? Math.round(totalCalories / daysLogged) : undefined,
     daysLogged,

@@ -20,8 +20,8 @@ mcp = FastMCP(
     "health-tracker",
     instructions=(
         "Personal health tracker. Dates are YYYY-MM-DD; use get_current_date to resolve relative dates. "
-        "Entries cannot be edited or deleted through these tools, so check existing data before adding "
-        "to avoid duplicates. Nutrition is one entry per day and saving replaces that day's totals. "
+            "Use edit_entry and delete_entry with the UUID returned by read tools to correct records. "
+            "Nutrition accepts separate entries per day; mark incomplete days partial and uncertain values estimated. "
         "Weight is stored in kg. Use find_missing_data to spot gaps and ask the user to fill them. "
         "When logging from journal notes, put a short summary of the context (triggers, feelings) in notes."
     ),
@@ -102,6 +102,22 @@ def stats(values: list[float]) -> dict | None:
     return {"count": len(values), "average": round(mean(values), 2), "min": min(values), "max": max(values)}
 
 
+def aggregate_nutrition(rows: list[dict]) -> list[dict]:
+    days: dict[str, dict] = {}
+    for row in rows:
+        day = days.setdefault(row["date"], {
+            "date": row["date"], "calories_kcal": None, "protein_grams": None, "water_ml": None,
+            "estimated": False, "partial": False,
+        })
+        for field in ("calories_kcal", "protein_grams", "water_ml"):
+            value = row.get(field)
+            if value is not None:
+                day[field] = (day[field] or 0) + float(value)
+        day["estimated"] = day["estimated"] or bool(row.get("estimated", False))
+        day["partial"] = day["partial"] or bool(row.get("partial", False))
+    return [days[key] for key in sorted(days)]
+
+
 def slope_per_day(points: list[tuple[date, float]]) -> float | None:
     """Least-squares slope of value per day; points must be sorted by date."""
     if len(points) < 2:
@@ -159,7 +175,7 @@ async def get_profile() -> dict | None:
 
 @mcp.tool()
 async def get_biometrics(
-    metric_type: Literal["weight", "waistline", "body_fat_percentage", "muscle_mass"] | None = None,
+    metric_type: Literal["weight", "waistline", "body_fat_percentage", "visceral_fat_level", "muscle_mass"] | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> list[dict]:
@@ -206,7 +222,7 @@ async def get_summary(days: int = 7) -> dict:
     activities = [r for r in data["activities"] if in_range(r["date"], start, end)]
     stress = [r for r in data["stress"] if in_range(r["date"], start, end)]
     sleep = [r for r in data["sleep"] if in_range(r["wake_date"], start, end)]
-    nutrition = [r for r in data["nutrition"] if in_range(r["date"], start, end)]
+    nutrition = aggregate_nutrition([r for r in data["nutrition"] if in_range(r["date"], start, end)])
 
     def metric(name: str) -> dict | None:
         return stats([float(r["value"]) for r in biometrics if r["metric_type"] == name])
@@ -227,9 +243,12 @@ async def get_summary(days: int = 7) -> dict:
         "stress_level": stats([float(r["stress_level"]) for r in stress]),
         "sleep_minutes": stats([float(r["sleep_duration_minutes"]) for r in sleep]),
         "restedness": stats([float(r["restedness"]) for r in sleep if r.get("restedness") is not None]),
-        "calories_kcal": stats([float(r["calories_kcal"]) for r in nutrition]),
-        "protein_grams": stats([float(r["protein_grams"]) for r in nutrition]),
-        "water_ml": stats([float(r["water_ml"]) for r in nutrition]),
+        "calories_kcal": stats([float(r["calories_kcal"]) for r in nutrition
+                     if r["calories_kcal"] is not None and not r["estimated"] and not r["partial"]]),
+        "protein_grams": stats([float(r["protein_grams"]) for r in nutrition
+                    if r["protein_grams"] is not None and not r["estimated"] and not r["partial"]]),
+        "water_ml": stats([float(r["water_ml"]) for r in nutrition
+                   if r["water_ml"] is not None and not r["estimated"] and not r["partial"]]),
     }
 
 
@@ -280,7 +299,7 @@ async def find_missing_data(start_date: str | None = None, end_date: str | None 
         "end_date": end.isoformat(),
         "stress": daily(data["stress"], "date"),
         "sleep": daily(data["sleep"], "wake_date"),
-        "nutrition": daily(data["nutrition"], "date"),
+        "nutrition": daily([r for r in data["nutrition"] if not r.get("partial", False)], "date"),
         "weight": weekly(biometric_dates("weight")),
         "body_fat_percentage": weekly(biometric_dates("body_fat_percentage")),
         "waistline": weekly(biometric_dates("waistline")),
@@ -364,21 +383,24 @@ async def get_energy_balance(days: int = 28) -> dict:
     start, end = window(None, None, days)
     data = await load_all()
     profile = data["profile"]
-    nutrition = [r for r in data["nutrition"] if in_range(r["date"], start, end)]
+    nutrition_rows = [r for r in data["nutrition"] if in_range(r["date"], start, end)]
+    nutrition = [r for r in aggregate_nutrition(nutrition_rows) if not r["estimated"] and not r["partial"]]
     weights = series(data["biometrics"], "weight", start, end)
     all_weights = series(data["biometrics"], "weight")
     latest_weight = all_weights[-1][1] if all_weights else None
 
-    avg_calories = mean(float(r["calories_kcal"]) for r in nutrition) if nutrition else None
-    avg_protein = mean(float(r["protein_grams"]) for r in nutrition) if nutrition else None
+    calorie_days = [r for r in nutrition if r["calories_kcal"] is not None]
+    protein_days = [r for r in nutrition if r["protein_grams"] is not None]
+    avg_calories = mean(float(r["calories_kcal"]) for r in calorie_days) if calorie_days else None
+    avg_protein = mean(float(r["protein_grams"]) for r in protein_days) if protein_days else None
     weight_slope = slope_per_day(weights)
 
     from_history = None
-    if nutrition and len(weights) >= 4 and weight_slope is not None:
-        first_evidence = max(min(parse_date(r["date"]) for r in nutrition), weights[0][0])
+    if calorie_days and len(weights) >= 4 and weight_slope is not None:
+        first_evidence = max(min(parse_date(r["date"]) for r in calorie_days), weights[0][0])
         covered = (end - first_evidence).days + 1
         span = (weights[-1][0] - weights[0][0]).days
-        if covered >= 14 and span >= 14 and len(nutrition) / covered >= 0.7:
+        if covered >= 14 and span >= 14 and len(calorie_days) / covered >= 0.7:
             estimate = round(avg_calories - weight_slope * KCAL_PER_KG)
             from_history = estimate if 500 <= estimate <= 8000 else None
 
@@ -395,7 +417,8 @@ async def get_energy_balance(days: int = 28) -> dict:
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
-        "nutrition_days_logged": len(nutrition),
+        "nutrition_days_logged": len(calorie_days),
+        "nutrition_entries_logged": len(nutrition_rows),
         "average_calories_kcal": round(avg_calories) if avg_calories is not None else None,
         "average_protein_grams": round(avg_protein, 1) if avg_protein is not None else None,
         "average_protein_g_per_kg": (
@@ -440,14 +463,17 @@ async def add_weigh_in(
 @mcp.tool()
 async def add_biometric(
     date: str,
-    metric_type: Literal["weight", "waistline", "body_fat_percentage", "muscle_mass"],
+    metric_type: Literal["weight", "waistline", "body_fat_percentage", "visceral_fat_level", "muscle_mass"],
     value: float,
-    unit: Literal["kg", "lbs", "cm", "inches", "%"],
+    unit: Literal["kg", "lbs", "cm", "inches", "%", "level"],
     notes: str | None = None,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
 ) -> dict:
     """Log a single biometric. Units: weight kg/lbs (stored as kg), muscle mass kg, waistline cm/inches, body fat %."""
     return await post("biometrics", {
-        "date": parse_date(date).isoformat(), "metric_type": metric_type, "value": value, "unit": unit, "notes": notes,
+        "date": parse_date(date).isoformat(), "metric_type": metric_type, "value": value, "unit": unit,
+        "scale_min": scale_min, "scale_max": scale_max, "notes": notes,
     })
 
 
@@ -504,19 +530,44 @@ async def add_sleep(
 @mcp.tool()
 async def add_nutrition(
     date: str,
-    calories_kcal: int,
-    protein_grams: float,
-    water_ml: int = 0,
+    calories_kcal: int | None = None,
+    protein_grams: float | None = None,
+    water_ml: int | None = None,
+    estimated: bool = False,
+    partial: bool = False,
     notes: str | None = None,
 ) -> dict:
-    """Save the day's total nutrition. One entry per date: this REPLACES any existing totals for
-    that date, so add to the existing values (get_nutrition) when logging an additional meal.
-    Use notes for what was eaten and whether the meal plan was followed.
+    """Add a nutrition entry; any metric may be omitted, but at least one is required.
+
+    Entries on the same date are summed in daily summaries. Mark estimated values and incomplete
+    days explicitly. Use notes to describe the meal or what remains unknown.
     """
+    if calories_kcal is None and protein_grams is None and water_ml is None:
+        raise ValueError("At least one of calories_kcal, protein_grams, or water_ml is required")
     return await post("nutrition", {
         "date": parse_date(date).isoformat(), "calories_kcal": calories_kcal,
-        "protein_grams": protein_grams, "water_ml": water_ml, "notes": notes,
+        "protein_grams": protein_grams, "water_ml": water_ml, "estimated": estimated,
+        "partial": partial, "notes": notes,
     })
+
+
+@mcp.tool()
+async def edit_entry(
+    resource: Literal["activities", "biometrics", "nutrition", "sleep", "stress"],
+    entry_id: str,
+    changes: dict[str, Any],
+) -> dict:
+    """Edit an existing entry by UUID. Use the id field returned by its get tool."""
+    return (await request("PATCH", f"{resource}/{entry_id}", changes))["data"]
+
+
+@mcp.tool()
+async def delete_entry(
+    resource: Literal["activities", "biometrics", "nutrition", "sleep", "stress"],
+    entry_id: str,
+) -> dict:
+    """Permanently delete an existing entry by UUID. Use the id returned by its get tool."""
+    return (await request("DELETE", f"{resource}/{entry_id}"))["data"]
 
 
 @mcp.tool()

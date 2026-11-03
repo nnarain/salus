@@ -70,7 +70,7 @@ export interface SleepEntry {
   bedtime: string;
   wake_time: string;
   sleep_duration_minutes: number;
-  restedness?: number;
+  restedness?: number | null;
   notes?: string;
 }
 
@@ -78,8 +78,10 @@ export interface NutritionEntry {
   id?: string;
   created_at?: string;
   date: string;
-  calories_kcal: number;
-  protein_grams: number;
-  water_ml: number;
+  calories_kcal?: number | null;
+  protein_grams?: number | null;
+  water_ml?: number | null;
+  estimated?: boolean;
+  partial?: boolean;
   notes?: string;
 }

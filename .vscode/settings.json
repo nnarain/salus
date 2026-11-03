@@ -99,6 +99,26 @@
         "/^node --test --test-name-pattern='body composition' tests/database\\.test\\.cjs && npx tsc --noEmit$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='sleep entry\\|sleep duration summaries' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='nutrition entries' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='maintenance estimate\\|seven-day nutrition average' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python3 -m py_compile mcp/server\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python3 -m py_compile mcp/server\\.py && npx tsc --noEmit$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

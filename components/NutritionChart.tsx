@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import type { NutritionEntry } from '@/lib/types';
 import type { CalorieEstimate } from '@/lib/calorieEstimate';
+import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
 
 interface NutritionChartProps {
   entries: NutritionEntry[] | null;
@@ -106,7 +107,7 @@ function NutritionChart({
     const hasSampleData = entries.length === 0;
     const sourceEntries = hasSampleData
       ? createSampleEntries(rangeYears, maintenanceEstimate, proteinTargetGrams)
-      : entries;
+      : aggregateDailyNutrition(entries);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let start = new Date(today);
@@ -135,10 +136,10 @@ function NutritionChart({
       const value = !entry
         ? undefined
         : selectedMetric === 'calories_kcal'
-          ? entry.calories_kcal
+          ? entry.calories_kcal ?? undefined
           : selectedMetric === 'protein_grams'
-            ? entry.protein_grams
-            : entry.water_ml / 1000;
+            ? entry.protein_grams ?? undefined
+            : entry.water_ml == null ? undefined : entry.water_ml / 1000;
       chartData.push({ date: dateString, value });
     }
 
