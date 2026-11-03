@@ -8,6 +8,48 @@ The stack contains exactly two services: `app` (Next.js on Node 24 LTS) and `db`
 - A maintained Docker Engine installation with Docker Compose v2
 - Enough memory to build Next.js (at least 2 GB is recommended)
 
+## GitHub Container Registry Images
+
+The workflow in `.github/workflows/docker-publish.yml` builds both production
+images independently using the existing Dockerfiles:
+
+- Application: `ghcr.io/<owner>/<repository>`
+- MCP server: `ghcr.io/<owner>/<repository>-mcp`
+
+Image names use lowercase owner and repository names. Builds run on branch
+pushes, pull requests, `v*` tag pushes, and manual workflow dispatches. Only
+the repository's default branch and `v*` tags publish images; pull requests and
+other branches build without registry login or publication. Manual runs follow
+the same publication rules for the selected branch or tag.
+
+Default-branch builds publish `latest`, a branch tag, and a `sha-<commit>` tag.
+Version tags retain their full name, such as `v1.2.3`; semantic versions also
+publish `1.2.3` and `1.2`. Release tags do not overwrite `latest`. Each image has
+its own GitHub Actions build cache. Images currently target Linux AMD64.
+
+Authentication uses the workflow's automatic `GITHUB_TOKEN` with
+`packages: write`; no Docker Hub account or additional registry secret is needed.
+Ensure GitHub Actions is enabled and repository or organization policy permits
+package publication. If a package with the same name already exists, grant this
+repository Actions access in that package's settings.
+
+After committing and pushing the workflow to the default branch, monitor
+**Actions > Build and Publish Docker Images**. Published images appear under
+the repository owner's **Packages**. New packages are private by default;
+change each package's visibility explicitly if anonymous pulls are desired.
+Private pulls require `docker login ghcr.io` with a token that has
+`read:packages` and access to the package.
+
+Pull the published images, replacing the placeholders with your repository:
+
+```bash
+docker pull ghcr.io/<owner>/<repository>:latest
+docker pull ghcr.io/<owner>/<repository>-mcp:latest
+```
+
+The existing Compose configuration still builds the application locally.
+Publishing images does not deploy containers or change Compose services.
+
 ## Quick Start
 
 ```bash
