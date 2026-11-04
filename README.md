@@ -71,6 +71,28 @@ docker compose --profile mcp up --build -d
 Point your MCP client at `http://localhost:8000/mcp`. Like the app, it has no
 authentication and binds to loopback by default.
 
+### Sleep as Android Webhook
+
+An optional receiver for [Sleep as Android webhooks](https://sleep.urbandroid.org/docs/services/custom_webhooks.html)
+logs each tracked night as a sleep entry. Start it with a shared secret:
+
+```bash
+SLEEP_WEBHOOK_TOKEN=$(openssl rand -hex 24) SLEEP_WEBHOOK_BIND_ADDRESS=0.0.0.0 \
+  docker compose --profile sleep-webhook up --build -d
+```
+
+In the app, open `Settings` → `Services` → `Automation` → `Webhooks`, enable it, and
+set the URL to `http://<host>:8001/webhook?token=<SLEEP_WEBHOOK_TOKEN>`. Under
+`Automation` → `Events`, enable `sleep_tracking_started`, `_stopped`, `_paused`, and
+`_resumed`.
+
+The app's events carry no sleep data, so bedtime and wake time are when tracking
+starts and stops, and paused time is subtracted from the duration. Sessions
+shorter than `SLEEP_WEBHOOK_MIN_MINUTES` (default 120) are ignored so naps don't
+replace the night's entry. Existing restedness and notes for that wake date are
+kept. The URL token is the only protection; prefer a VPN such as Tailscale over
+exposing the port publicly, since the request is plain HTTP.
+
 ### Development
 
 For containerized development with hot reload:

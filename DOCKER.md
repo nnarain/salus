@@ -15,6 +15,7 @@ images independently using the existing Dockerfiles:
 
 - Application: `ghcr.io/<owner>/<repository>`
 - MCP server: `ghcr.io/<owner>/<repository>-mcp`
+- Sleep webhook: `ghcr.io/<owner>/<repository>-sleep-webhook`
 
 Image names use lowercase owner and repository names. Builds run on branch
 pushes, pull requests, `v*` tag pushes, and manual workflow dispatches. Only

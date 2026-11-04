@@ -47,8 +47,9 @@ DOCKER.md
 *.swo
 *~
 
-# MCP server (built separately)
+# Python services (built separately)
 mcp
+sleep-webhook
 
 # Temporary files
 tmp

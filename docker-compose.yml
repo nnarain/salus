@@ -55,8 +55,28 @@ services:
       app:
         condition: service_healthy
 
+  sleep-webhook:
+    profiles: ["sleep-webhook"]
+    build:
+      context: ./sleep-webhook
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${SLEEP_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${SLEEP_WEBHOOK_PORT:-8001}:8000"
+    environment:
+      HEALTH_TRACKER_API_URL: http://app:3000
+      TZ: ${TZ:-UTC}
+      WEBHOOK_TOKEN: ${SLEEP_WEBHOOK_TOKEN:-}
+      MIN_SLEEP_MINUTES: ${SLEEP_WEBHOOK_MIN_MINUTES:-120}
+    volumes:
+      - sleep-webhook-data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  sleep-webhook-data:
 
 networks:
   default:

@@ -33,6 +33,10 @@ jobs:
             context: ./mcp
             file: ./mcp/Dockerfile
             suffix: -mcp
+          - image: sleep-webhook
+            context: ./sleep-webhook
+            file: ./sleep-webhook/Dockerfile
+            suffix: -sleep-webhook
     steps:
       - name: Check out source
         uses: actions/checkout@v4
