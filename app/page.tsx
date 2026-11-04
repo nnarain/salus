@@ -20,6 +20,7 @@ import WeeklyStressChart from '@/components/WeeklyStressChart';
 import SleepDurationChart from '@/components/SleepDurationChart';
 import CalorieWeightInsightChart from '@/components/CalorieWeightInsightChart';
 import SleepStressInsightChart from '@/components/SleepStressInsightChart';
+import WeightStressInsightChart from '@/components/WeightStressInsightChart';
 import type { ActivityEntry, BiometricEntry, BodyFatEstimate, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
@@ -829,6 +830,13 @@ export default function Home() {
               nutritionEntries={nutritionEntries}
               biometrics={biometrics}
               profile={profile}
+              rangeYears={activeChartRangeYears}
+              weightDisplayUnit={weightDisplayUnit}
+              loading={loading}
+            />
+            <WeightStressInsightChart
+              biometrics={biometrics}
+              stressEntries={stressEntries}
               rangeYears={activeChartRangeYears}
               weightDisplayUnit={weightDisplayUnit}
               loading={loading}

@@ -119,6 +119,11 @@
         "/^python3 -m py_compile mcp/server\\.py && npx tsc --noEmit$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "npx next": true,
+        "/^node --test --test-name-pattern='weight stress' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

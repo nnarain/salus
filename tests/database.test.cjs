@@ -1032,6 +1032,88 @@ test('insight helpers pair prior-day stress with wake-date sleep and estimate da
   assert.ok(balance[0].estimatedBalanceKcal > 0);
 });
 
+test('weight stress windows merge consecutive days without crossing gaps or low stress', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const { buildWeightStressTimeline } = loadModule('lib/insights.ts', {
+    '@/lib/weight': weight,
+    '@/lib/calorieEstimate': {},
+    '@/lib/sleepSummary': {},
+    '@/lib/stressSummary': loadModule('lib/stressSummary.ts').exports,
+    '@/lib/nutritionSummary': {},
+  }).exports;
+  const biometrics = [
+    { date: '2026-10-24', metric_type: 'weight', value: 70, unit: 'kg' },
+    { date: '2026-10-25', metric_type: 'weight', value: 80, unit: 'kg' },
+    { date: '2026-10-25', metric_type: 'weight', value: weight.kilogramsToPounds(82), unit: 'lbs' },
+    { date: '2026-10-26', metric_type: 'waistline', value: 85, unit: 'cm' },
+    { date: '2026-10-27', metric_type: 'weight', value: -1, unit: 'kg' },
+    { date: '2026-11-01', metric_type: 'weight', value: 90, unit: 'kg' },
+  ];
+  const stress = [
+    { date: '2026-10-24', stress_level: 9 },
+    { date: '2026-10-25', stress_level: 6 },
+    { date: '2026-10-25', stress_level: 10 },
+    { date: '2026-10-26', stress_level: 9 },
+    { date: '2026-10-28', stress_level: 8 },
+    { date: '2026-10-29', stress_level: 3 },
+    { date: '2026-10-30', stress_level: 7 },
+    { date: '2026-10-31', stress_level: 8 },
+  ];
+  for (const unit of ['kg', 'lbs']) {
+    const { points, windows } = buildWeightStressTimeline(biometrics, stress, '2026-10-25', '2026-10-31', unit);
+    assert.equal(points.length, 7);
+    assert.ok(Math.abs(points[0].weight - (unit === 'kg' ? 81 : weight.kilogramsToPounds(81))) < 0.001);
+    assert.equal(points[0].stressLevel, 8);
+    assert.equal(points[1].weight, undefined);
+    assert.equal(points[2].weight, undefined);
+    assert.equal(points[2].stressLevel, undefined);
+    assert.deepEqual(JSON.parse(JSON.stringify(windows)), [
+      { start: Date.parse('2026-10-25Z'), end: Date.parse('2026-10-27Z'), level: 'high' },
+      { start: Date.parse('2026-10-28Z'), end: Date.parse('2026-10-29Z'), level: 'high' },
+      { start: Date.parse('2026-10-30Z'), end: Date.parse('2026-10-31Z'), level: 'moderate' },
+      { start: Date.parse('2026-10-31Z'), end: Date.parse('2026-11-01Z'), level: 'high' },
+    ]);
+  }
+  const empty = buildWeightStressTimeline([], [], '2026-10-25', '2026-10-31', 'kg');
+  assert.equal(empty.windows.length, 0);
+  assert.ok(empty.points.every((point) => point.weight === undefined && point.stressLevel === undefined));
+});
+
+test('weight stress logging gaps exclude pre-tracking time and flag only immediately preceding high stress', () => {
+  const { buildWeightStressTimeline } = loadModule('lib/insights.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/calorieEstimate': {},
+    '@/lib/sleepSummary': {},
+    '@/lib/stressSummary': loadModule('lib/stressSummary.ts').exports,
+    '@/lib/nutritionSummary': {},
+  }).exports;
+  const biometrics = ['2026-10-10', '2026-10-15', '2026-10-18', '2026-10-22']
+    .map((date) => ({ date, metric_type: 'weight', value: 80, unit: 'kg' }));
+  const stress = [
+    { date: '2026-10-10', stress_level: 9 },
+    { date: '2026-10-15', stress_level: 6 },
+    { date: '2026-10-18', stress_level: 2 },
+    { date: '2026-10-22', stress_level: 9 },
+  ];
+  const { gaps } = buildWeightStressTimeline(biometrics, stress, '2026-10-01', '2026-10-25', 'kg');
+  assert.equal(gaps.length, 6);
+  for (const metric of ['weight', 'stress']) {
+    const matching = gaps.filter((gap) => gap.metric === metric);
+    assert.deepEqual(JSON.parse(JSON.stringify(matching)), [
+      { start: Date.parse('2026-10-11Z'), end: Date.parse('2026-10-15Z'), days: 4, metric, afterHighStress: true },
+      { start: Date.parse('2026-10-19Z'), end: Date.parse('2026-10-22Z'), days: 3, metric, afterHighStress: false },
+      { start: Date.parse('2026-10-23Z'), end: Date.parse('2026-10-26Z'), days: 3, metric, afterHighStress: true },
+    ]);
+  }
+  const ranged = buildWeightStressTimeline(biometrics, stress, '2026-10-13', '2026-10-14', 'kg');
+  assert.equal(ranged.gaps.length, 2);
+  assert.ok(ranged.gaps.every((gap) => gap.start === Date.parse('2026-10-11Z') && gap.afterHighStress));
+  const absentStress = buildWeightStressTimeline(biometrics, [], '2026-10-01', '2026-10-25', 'kg');
+  assert.ok(absentStress.gaps.every((gap) => gap.metric === 'weight' && !gap.afterHighStress));
+  const empty = buildWeightStressTimeline([], [], '2026-10-01', '2026-10-25', 'kg');
+  assert.equal(empty.gaps.length, 0);
+});
+
 test('daily stress summaries average multiple readings without filling missing dates', () => {
   const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
   const summaries = aggregateDailyStress([
