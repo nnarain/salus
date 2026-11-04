@@ -1,210 +1,57 @@
+<p align="center">
+  <img src="salus-logo.png" alt="Salus logo" width="200" />
+</p>
+
 # Salus
 
-Self-hosted personal health tracker built with Next.js 16, PostgreSQL, Tailwind CSS, and Recharts.
+[![Build and Publish Docker Images](https://github.com/nnarain/health-tracker/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/nnarain/health-tracker/actions/workflows/docker-publish.yml)
 
-## Technology Stack
+Self-hosted personal health tracker
 
-- **Next.js 16**: React framework with App Router and Server Components
-- **PostgreSQL 17**: Database accessed directly by the Next.js server
-- **Tailwind CSS**: Utility-first CSS framework for styling
-- **Recharts**: Composable charting library for data visualization
-- **TypeScript**: Type-safe development
+> [!WARNING]
+> This is an entirely vibe coded application. I made this to solve some specific problems I cared about. But otherwise there isn't much in the way of quality control.
 
-## Body Fat Estimates
+## Concept
 
-The dashboard separates logged body-fat readings from Relative Fat Mass (RFM)
-estimates. RFM requires a waist measurement in cm or inches and a profile with
-height and units, biological sex, and age 20 or older. Using matching units,
-the equation is `64 - 20 * height / waist` for men and
-`76 - 20 * height / waist` for women. Invalid inputs or results outside 0-100%
-are not shown.
+Ok so why does this exist?
 
-`GET /api/biometrics` returns estimates separately as
-`bodyFatEstimates: [{ date, percentage, method: "rfm" }]`. Estimates use the newest
-waist reading per date and the current profile; changing the profile recalculates
-historical estimates. They are never saved as measured readings, included in CSV
-exports, averaged with logged body fat, or used in the combined health-risk score.
-The `latestScaleRange=true` response remains unchanged.
+Well I felt that there's a lot of health tracking app or workout trackers that will record primarily weight, but depending on what you are using might also have calories, activity, etc.
 
-The chart uses separate logged and dashed RFM series. General sex-specific
-reference ranges are not population averages, diagnoses, or personalized targets.
-RFM is a population-based estimate with potentially substantial individual error;
-consistent waist measurement at the top of the hip bone matters. See
-[Woolcott and Bergman (2018)](https://doi.org/10.1038/s41598-018-29362-1).
+Well weight is not the main factor to consider. If you're a body builder you want your weight to go up.
 
-## Getting Started
+So there's other significant factors:
 
-### Docker
+* Body fat percentage
+* Sleep
+* Stress
 
-With Docker Engine and Docker Compose v2 available, run:
+On top of the expected calories in and out.
 
-```bash
-docker compose up --build -d
-```
+I had a few apps for different things and I wanted some view for everything.
 
-Open [http://localhost:3000](http://localhost:3000). There are exactly two services:
-the Next.js app on Node 24 LTS and PostgreSQL 17. The database becomes healthy,
-then the app applies pending migrations before starting. No cloud account,
-API gateway, or manual schema setup is needed.
+So this project backend records data for:
 
-The app binds to loopback and the database has no published port. Optional
-settings are in `.env.docker.example`; copy it to `.env` to override defaults.
-Choose a URL-safe database password before first startup on your home server.
-This is a private single-user app with no login; do not expose it to the internet.
-See [DOCKER.md](DOCKER.md) for persistence, development, and server deployment.
+* Weight
+* Waist line
+* Body fat
+* Muscle mass
+* Sleep
+* Stress level
 
-This setup uses a new `postgres-data` volume. Old database volumes are not reused
-or deleted. If the old stack is still running, stop its containers first with
-`docker compose down --remove-orphans`, without `-v`, from the same project folder.
+Using waist line and height you can calculate a ratio that can be used as a measure of health. Modern scales can record body fat percentage.
 
-### MCP Server
+I normalize these on the scale of what is ideal and what is "at risk" then average them together as a single health index to track meaningful progress (or that's the idea).
 
-An optional MCP server (Python, streamable HTTP) lets an AI agent read and log
-data through the app's REST API: add weigh-ins, activities, stress, sleep, and
-nutrition; bulk import CSV; find logging gaps; and analyse weight/body
-composition trends and energy balance. Start it alongside the app with:
+## Insights
 
-```bash
-docker compose --profile mcp up --build -d
-```
+TODO
 
-Point your MCP client at `http://localhost:8000/mcp`. Like the app, it has no
-authentication and binds to loopback by default.
+## Calculations
 
-### Sleep as Android Webhook
+- **Health Risk Indicator (0–1)** — Waist-to-height ratio and body fat % are each normalized onto a 0–1 scale (0 = ideal, 1 = high risk) and averaged. WHtR < 0.5 threshold: [NICE NG246](https://www.nice.org.uk/guidance/ng246/chapter/Identifying-and-assessing-overweight-obesity-and-central-adiposity). Healthy body fat ranges: [Alberta Health Services](https://myhealth.alberta.ca/Health/aftercareinformation/pages/conditions.aspx?hwid=zp4369). Combined two-measurement assessment: [Health Canada](https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/healthy-weights/canadian-guidelines-body-weight-classification-adults/quick-reference-tool-professionals.html).
+- **Sleep target band** — 7–9 hours (ages 18–64), 7–8 hours (65+): [Canadian 24-Hour Movement Guidelines](https://csepguidelines.ca/guidelines/adults-18-64/).
+- **Relative Fat Mass (RFM)** — Body fat % estimated from height and waist: `64 − 20 × (height / waist) [+ 12 if female]`: [Woolcott & Bergman, *Scientific Reports* 2018](https://www.nature.com/articles/s41598-018-29362-1).
+- **Maintenance calories (TDEE)** — BMR from the [Mifflin-St Jeor equation](https://pubmed.ncbi.nlm.nih.gov/2305711/) (`10 × kg + 6.25 × cm − 5 × age + 5/−161`) multiplied by standard activity factors (1.2–1.9). When enough logged data exists, this is replaced by an estimate from actual intake and weight trend, using the ≈7,700 kcal/kg energy-to-weight convention ([Wishnofsky](https://pubmed.ncbi.nlm.nih.gov/13594881/)).
+- **Protein target** — 0.8 g/kg body weight (RDA baseline): [Health Canada Dietary Reference Intakes](https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-macronutrients.html).
 
-An optional receiver for [Sleep as Android webhooks](https://sleep.urbandroid.org/docs/services/custom_webhooks.html)
-logs each tracked night as a sleep entry. Start it with a shared secret:
-
-```bash
-SLEEP_WEBHOOK_TOKEN=$(openssl rand -hex 24) SLEEP_WEBHOOK_BIND_ADDRESS=0.0.0.0 \
-  docker compose --profile sleep-webhook up --build -d
-```
-
-In the app, open `Settings` → `Services` → `Automation` → `Webhooks`, enable it, and
-set the URL to `http://<host>:8001/webhook?token=<SLEEP_WEBHOOK_TOKEN>`. Under
-`Automation` → `Events`, enable `sleep_tracking_started`, `_stopped`, `_paused`, and
-`_resumed`.
-
-The app's events carry no sleep data, so bedtime and wake time are when tracking
-starts and stops, and paused time is subtracted from the duration. Sessions
-shorter than `SLEEP_WEBHOOK_MIN_MINUTES` (default 120) are ignored so naps don't
-replace the night's entry. Existing restedness and notes for that wake date are
-kept. The URL token is the only protection; prefer a VPN such as Tailscale over
-exposing the port publicly, since the request is plain HTTP.
-
-### Development
-
-For containerized development with hot reload:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-```
-
-Open http://localhost:3000. Saving frontend files triggers Next.js Fast Refresh
-in the existing browser tab; no image rebuild or manual refresh is needed.
-Source files are mounted into the app while dependencies and Next.js output use
-separate volumes. The normal production command does not enable live reload.
-
-Alternatively, use Node 24 LTS locally and run only PostgreSQL in Docker:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
-npm ci
-cp -n .env.local.example .env.local
-# Set DATABASE_URL to match your database password and localhost port.
-npm run dev
-```
-
-This local option also supports Fast Refresh. The development override publishes
-PostgreSQL only on loopback and adds a normal Docker network connection so host
-tools can reach it; production keeps the database internal-only and unpublished.
-Compose reads `.env`, while local Next.js and migrations read `.env.local`.
-Match the password and `POSTGRES_PORT` in both; injected `DATABASE_URL` takes
-precedence. Do not run two app servers on the same port. Development and
-production currently share the database volume for a given Compose project.
-
-Frontend/API edits reload during development. Adding SQL migrations requires
-restarting the app so its startup hook runs; changing environment values also
-requires a restart. Dependency changes require rerunning `npm ci` locally or
-restarting the development container. Use `Ctrl+C` for the foreground workflow;
-use the same paired Compose files with `down` to stop it without deleting data.
-
-### Migrations and Tests
-
-`npm run dev` and `npm start` apply pending SQL files from `db/migrations`.
-Run `npm run db:migrate` to apply them separately. Migrations use an advisory lock
-and transactional filename/checksum tracking in `schema_migrations`; failures
-block startup. Add new numbered SQL files instead of editing applied files, and
-keep transaction control statements out of migration SQL. `npm run build` works
-without a database. The migrations target a fresh database, not old multi-profile data.
-
-Run `npm test` for unit tests and available Compose checks. Set `TEST_DATABASE_URL`
-to also run live PostgreSQL checks in disposable schemas. Compose checks skip when
-Docker Compose is unavailable; `COMPOSE_BINARY` may point to a standalone Compose
-executable for daemon-free configuration checks.
-
-For production HTTP acceptance checks, set `ACCEPTANCE_URL` to an app connected
-to an empty, disposable database when running `npm test`. These checks create
-sample records and exercise every existing entry type, profile updates, CSV
-import/export, and invalid-input responses. Never use a personal-data instance
-for this option. See [DOCKER.md](DOCKER.md#backup-and-restore) for complete
-database backups and tested restore commands.
-
-The dashboard's original visual layout and descriptive subtitle are preserved;
-the subtitle still names the old stack. The actual backend is PostgreSQL as
-described above.
-
-## Project Structure
-
-```
-health-tracker/
-├── app/                  # Next.js app directory
-│   ├── api/             # API routes
-│   │   └── biometrics/  # Biometric data endpoints
-│   ├── layout.tsx       # Root layout component
-│   ├── page.tsx         # Home page
-│   └── globals.css      # Global styles
-├── components/          # React components
-│   └── BiometricForm.tsx # Form for adding biometric data
-├── lib/                 # Utility functions and configurations
-│   ├── db.ts            # Server-only PostgreSQL connection pool
-│   └── types.ts         # TypeScript type definitions
-├── db/                  # Database schema
-│   └── migrations/      # Numbered SQL migrations
-├── scripts/             # Migration runner
-├── tests/               # Database and deployment checks
-├── public/              # Static assets
-├── .env.local.example   # Environment variables template
-└── package.json         # Project dependencies
-```
-
-## Features
-
-- ✅ **Biometric Data Entry**: Add weight and waistline measurements with date and optional notes
-- ✅ **Data Persistence**: Store biometric data in PostgreSQL
-- ✅ **Extensible Design**: Database schema designed to support multiple types of health metrics
-- ✅ **Responsive UI**: Beautiful, accessible form with Tailwind CSS
-- ✅ **Data Visualization**: Sample charts with Recharts library
-- 🚧 **User Authentication**: Coming soon
-- 🚧 **Historical Data Charts**: Visualize your biometric data over time
-
-### Biometric Data
-
-The app currently supports tracking:
-- **Weight**: Record your weight in kg or lbs
-- **Waistline**: Track waist measurements in cm or inches
-
-The database schema is extensible, making it easy to add more biometric types in the future.
-
-## Development
-
-The application uses:
-- ESLint for code linting: `npm run lint`
-- TypeScript for type checking
-- Tailwind CSS for styling
-
-## License
-
-MIT
 
