@@ -1032,6 +1032,53 @@ test('insight helpers pair prior-day stress with wake-date sleep and estimate da
   assert.ok(balance[0].estimatedBalanceKcal > 0);
 });
 
+test('weight stress windows merge consecutive days without crossing gaps or low stress', () => {
+  const weight = loadModule('lib/weight.ts').exports;
+  const { buildWeightStressTimeline } = loadModule('lib/insights.ts', {
+    '@/lib/weight': weight,
+    '@/lib/calorieEstimate': {},
+    '@/lib/sleepSummary': {},
+    '@/lib/stressSummary': loadModule('lib/stressSummary.ts').exports,
+    '@/lib/nutritionSummary': {},
+  }).exports;
+  const biometrics = [
+    { date: '2026-10-24', metric_type: 'weight', value: 70, unit: 'kg' },
+    { date: '2026-10-25', metric_type: 'weight', value: 80, unit: 'kg' },
+    { date: '2026-10-25', metric_type: 'weight', value: weight.kilogramsToPounds(82), unit: 'lbs' },
+    { date: '2026-10-26', metric_type: 'waistline', value: 85, unit: 'cm' },
+    { date: '2026-10-27', metric_type: 'weight', value: -1, unit: 'kg' },
+    { date: '2026-11-01', metric_type: 'weight', value: 90, unit: 'kg' },
+  ];
+  const stress = [
+    { date: '2026-10-24', stress_level: 9 },
+    { date: '2026-10-25', stress_level: 6 },
+    { date: '2026-10-25', stress_level: 10 },
+    { date: '2026-10-26', stress_level: 9 },
+    { date: '2026-10-28', stress_level: 8 },
+    { date: '2026-10-29', stress_level: 3 },
+    { date: '2026-10-30', stress_level: 7 },
+    { date: '2026-10-31', stress_level: 8 },
+  ];
+  for (const unit of ['kg', 'lbs']) {
+    const { points, windows } = buildWeightStressTimeline(biometrics, stress, '2026-10-25', '2026-10-31', unit);
+    assert.equal(points.length, 7);
+    assert.ok(Math.abs(points[0].weight - (unit === 'kg' ? 81 : weight.kilogramsToPounds(81))) < 0.001);
+    assert.equal(points[0].stressLevel, 8);
+    assert.equal(points[1].weight, undefined);
+    assert.equal(points[2].weight, undefined);
+    assert.equal(points[2].stressLevel, undefined);
+    assert.deepEqual(JSON.parse(JSON.stringify(windows)), [
+      { start: Date.parse('2026-10-25Z'), end: Date.parse('2026-10-27Z'), level: 'high' },
+      { start: Date.parse('2026-10-28Z'), end: Date.parse('2026-10-29Z'), level: 'high' },
+      { start: Date.parse('2026-10-30Z'), end: Date.parse('2026-10-31Z'), level: 'moderate' },
+      { start: Date.parse('2026-10-31Z'), end: Date.parse('2026-11-01Z'), level: 'high' },
+    ]);
+  }
+  const empty = buildWeightStressTimeline([], [], '2026-10-25', '2026-10-31', 'kg');
+  assert.equal(empty.windows.length, 0);
+  assert.ok(empty.points.every((point) => point.weight === undefined && point.stressLevel === undefined));
+});
+
 test('daily stress summaries average multiple readings without filling missing dates', () => {
   const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
   const summaries = aggregateDailyStress([
