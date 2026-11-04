@@ -15,6 +15,7 @@ import {
 import type { NutritionEntry } from '@/lib/types';
 import type { CalorieEstimate } from '@/lib/calorieEstimate';
 import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 
 interface NutritionChartProps {
   entries: NutritionEntry[] | null;
@@ -118,7 +119,7 @@ function NutritionChart({
       }, null);
       start = earliestDate ? new Date(`${earliestDate}T00:00:00`) : new Date(today.getTime() - 729 * 86400000);
     } else {
-      start.setFullYear(start.getFullYear() - rangeYears);
+      start = getChartRangeStart(rangeYears, today);
     }
 
     const startDate = dateToString(start);
@@ -192,7 +193,7 @@ function NutritionChart({
             <span className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Sample preview</span>
           )}
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {rangeYears === 'all' ? 'All available data' : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`}
+            {getChartRangeLabel(rangeYears)}
           </span>
         </div>
       </div>

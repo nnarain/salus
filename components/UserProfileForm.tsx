@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { UserProfile } from '@/lib/types';
+import ChartRangeControl from '@/components/ChartRangeControl';
 
 interface UserProfileFormProps {
   onSuccess?: () => void;
@@ -9,6 +10,8 @@ interface UserProfileFormProps {
   onChartRangeChange: (range: number | 'all') => void;
   weightDisplayUnit: 'kg' | 'lbs';
   onWeightDisplayUnitChange: (unit: 'kg' | 'lbs') => void;
+  loggingGapDays: number;
+  onLoggingGapDaysChange: (days: number) => void;
 }
 
 export default function UserProfileForm({
@@ -16,8 +19,11 @@ export default function UserProfileForm({
   onChartRangeChange,
   weightDisplayUnit,
   onWeightDisplayUnitChange,
+  loggingGapDays,
+  onLoggingGapDaysChange,
   onSuccess,
 }: UserProfileFormProps) {
+  const [loggingGapInput, setLoggingGapInput] = useState(String(loggingGapDays));
   const [formData, setFormData] = useState({
     height: '',
     height_unit: 'cm',
@@ -265,20 +271,12 @@ export default function UserProfileForm({
 
       <section>
         <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Chart date range</h3>
-        <label htmlFor="chart-range" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Show measurements from
-        </label>
-        <select
+        <ChartRangeControl
           id="chart-range"
+          label="Show measurements from"
           value={chartRangeYears}
-          onChange={(event) => onChartRangeChange(event.target.value === 'all' ? 'all' : Number(event.target.value))}
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-        >
-          <option value={1}>Last year</option>
-          <option value={2}>Last 2 years</option>
-          <option value={5}>Last 5 years</option>
-          <option value="all">All available data</option>
-        </select>
+          onChange={onChartRangeChange}
+        />
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           Applies to all charts and saves immediately.
         </p>
@@ -300,6 +298,27 @@ export default function UserProfileForm({
         </select>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           Weight measurements are stored in kilograms. This display preference saves immediately.
+        </p>
+        <label htmlFor="logging-gap-days" className="mb-2 mt-5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Minimum logging break (days)
+        </label>
+        <input
+          id="logging-gap-days"
+          type="number"
+          min={1}
+          max={365}
+          step={1}
+          value={loggingGapInput}
+          onChange={(event) => {
+            setLoggingGapInput(event.target.value);
+            const days = Number(event.target.value);
+            if (Number.isInteger(days) && days >= 1 && days <= 365) onLoggingGapDaysChange(days);
+          }}
+          onBlur={() => setLoggingGapInput(String(loggingGapDays))}
+          className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+        />
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          Weight and stress insight · {loggingGapDays} consecutive unlogged days · saved on this browser.
         </p>
       </section>
 

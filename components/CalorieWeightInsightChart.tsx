@@ -18,6 +18,7 @@ import {
 import type { BiometricEntry, NutritionEntry, UserProfile } from '@/lib/types';
 import { poundsToKilograms, kilogramsToPounds } from '@/lib/weight';
 import { buildDailyCalorieBalance } from '@/lib/insights';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 
 interface CalorieWeightInsightChartProps {
   nutritionEntries: NutritionEntry[] | null;
@@ -123,8 +124,7 @@ function CalorieWeightInsightChart({
     if (rangeYears === 'all') {
       startDate = allDates.reduce((earliest, date) => date < earliest ? date : earliest, allDates[0]);
     } else {
-      const start = new Date(today);
-      start.setFullYear(start.getFullYear() - rangeYears);
+      const start = getChartRangeStart(rangeYears, today);
       startDate = dateToString(start);
     }
     const endDate = dateToString(today);
@@ -210,7 +210,7 @@ function CalorieWeightInsightChart({
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Calorie balance &amp; weight trend</h2>
         <span className="text-sm text-gray-500 dark:text-gray-400">
-          {rangeYears === 'all' ? 'All available data' : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`}
+          {getChartRangeLabel(rangeYears)}
         </span>
       </div>
       <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">

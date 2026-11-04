@@ -5,8 +5,9 @@ import {
   CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { BiometricEntry, StressEntry } from '@/lib/types';
-import { buildWeightStressTimeline } from '@/lib/insights';
+import { buildWeightStressTimeline, DEFAULT_LOGGING_GAP_DAYS } from '@/lib/insights';
 import type { LoggingGap, WeightStressPoint } from '@/lib/insights';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 
 interface WeightStressInsightChartProps {
   biometrics: BiometricEntry[];
@@ -14,6 +15,7 @@ interface WeightStressInsightChartProps {
   rangeYears: number | 'all';
   weightDisplayUnit: 'kg' | 'lbs';
   loading: boolean;
+  loggingGapDays?: number;
 }
 
 function formatDate(timestamp: number, includeYear: boolean): string {
@@ -63,7 +65,7 @@ function LoggingGapItem({ gap }: { gap: LoggingGap }) {
 }
 
 export default function WeightStressInsightChart({
-  biometrics, stressEntries, rangeYears, weightDisplayUnit, loading,
+  biometrics, stressEntries, rangeYears, weightDisplayUnit, loading, loggingGapDays = DEFAULT_LOGGING_GAP_DAYS,
 }: WeightStressInsightChartProps) {
   const gapPatternId = useId();
   const [windowRange, setWindowRange] = useState<'dashboard' | 'month'>('dashboard');
@@ -78,11 +80,11 @@ export default function WeightStressInsightChart({
     startDate = [...biometrics.filter((entry) => entry.metric_type === 'weight'), ...(stressEntries ?? [])]
       .reduce((earliest, entry) => entry.date.slice(0, 10) < earliest ? entry.date.slice(0, 10) : earliest, endDate);
   } else {
-    start.setUTCFullYear(start.getUTCFullYear() - rangeYears);
-    startDate = start.toISOString().slice(0, 10);
+    const cutoff = getChartRangeStart(rangeYears, today);
+    startDate = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
   }
   const { points, windows, gaps } = buildWeightStressTimeline(
-    biometrics, stressEntries ?? [], startDate, endDate, weightDisplayUnit,
+    biometrics, stressEntries ?? [], startDate, endDate, weightDisplayUnit, loggingGapDays,
   );
   const chartPoints = points.filter((point) => point.weight !== undefined
     || gaps.some((gap) => gap.metric === 'weight' && point.timestamp >= gap.start && point.timestamp < gap.end));
@@ -109,7 +111,7 @@ export default function WeightStressInsightChart({
           onChange={(event) => setWindowRange(event.target.value as 'dashboard' | 'month')}
           className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
         >
-          <option value="dashboard">Dashboard range</option>
+          <option value="dashboard">{getChartRangeLabel(rangeYears)}</option>
           <option value="month">Last month</option>
         </select>
       </div>
@@ -119,7 +121,7 @@ export default function WeightStressInsightChart({
         <span className="inline-flex items-center gap-2"><span className="h-3 w-3 bg-red-500/30" />High stress (8 to 10)</span>
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-3 border border-dashed border-gray-400" style={{ backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, #94a3b855 3px, #94a3b855 4px)' }} />
-          Logging break (3+ days)
+          Logging break ({loggingGapDays}+ days)
         </span>
       </div>
       {loading ? (
@@ -185,7 +187,7 @@ export default function WeightStressInsightChart({
             </details>
           )}
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Breaks count 3+ consecutive days without an entry after that type of tracking began.
+            Breaks count {loggingGapDays}+ consecutive days without an entry after that type of tracking began.
             {' '}After high stress means the preceding day averaged 8 or higher; the reason for the break is unknown.
           </p>
         </div>

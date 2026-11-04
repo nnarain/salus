@@ -124,6 +124,10 @@
         "/^node --test --test-name-pattern='weight stress' tests/database\\.test\\.cjs$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --test --test-name-pattern='chart ranges\\|weight stress' tests/database\\.test\\.cjs$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

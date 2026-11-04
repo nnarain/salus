@@ -21,6 +21,7 @@ import SleepDurationChart from '@/components/SleepDurationChart';
 import CalorieWeightInsightChart from '@/components/CalorieWeightInsightChart';
 import SleepStressInsightChart from '@/components/SleepStressInsightChart';
 import WeightStressInsightChart from '@/components/WeightStressInsightChart';
+import ChartRangeControl from '@/components/ChartRangeControl';
 import type { ActivityEntry, BiometricEntry, BodyFatEstimate, NutritionEntry, SleepEntry, StressEntry, UserProfile } from '@/lib/types';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { getMaintenanceEstimate } from '@/lib/calorieEstimate';
@@ -34,6 +35,8 @@ import {
   getWeightTrendTone,
 } from '@/lib/dashboardMetrics';
 import { calculateHealthRiskIndicator } from '@/lib/healthRisk';
+import { DEFAULT_LOGGING_GAP_DAYS } from '@/lib/insights';
+import { isValidChartRange } from '@/lib/chartRange';
 
 const SUMMARY_TONE_STYLES = {
   green: { value: 'text-green-700 dark:text-green-400', description: 'text-xs text-green-700 dark:text-green-400 mt-1', border: 'border-green-200 dark:border-green-700' },
@@ -100,6 +103,7 @@ export default function Home() {
   const [defaultChartRangeYears, setDefaultChartRangeYears] = useState<number | 'all'>(2);
   const [activeChartRangeYears, setActiveChartRangeYears] = useState<number | 'all'>(2);
   const [weightDisplayUnit, setWeightDisplayUnit] = useState<'kg' | 'lbs'>('kg');
+  const [loggingGapDays, setLoggingGapDays] = useState(DEFAULT_LOGGING_GAP_DAYS);
   const calorieEstimate = useMemo(() => getMaintenanceEstimate(profile ?? {}, nutritionEntries ?? [], biometrics),
     [profile, nutritionEntries, biometrics]);
   const latestWeightEntry = useMemo(() => biometrics
@@ -289,10 +293,14 @@ export default function Home() {
   useEffect(() => {
     const savedRange = window.localStorage.getItem('health-tracker-chart-range');
     const savedWeightUnit = window.localStorage.getItem('health-tracker-weight-display-unit');
+    const savedGapDays = Number(window.localStorage.getItem('health-tracker-logging-gap-days'));
+    if (Number.isInteger(savedGapDays) && savedGapDays >= 1 && savedGapDays <= 365) {
+      setLoggingGapDays(savedGapDays);
+    }
     if (savedRange === 'all') {
       setDefaultChartRangeYears('all');
       setActiveChartRangeYears('all');
-    } else if ([1, 2, 5].includes(Number(savedRange))) {
+    } else if (isValidChartRange(Number(savedRange))) {
       const range = Number(savedRange);
       setDefaultChartRangeYears(range);
       setActiveChartRangeYears(range);
@@ -311,6 +319,11 @@ export default function Home() {
   const handleWeightDisplayUnitChange = (unit: 'kg' | 'lbs') => {
     setWeightDisplayUnit(unit);
     window.localStorage.setItem('health-tracker-weight-display-unit', unit);
+  };
+
+  const handleLoggingGapDaysChange = (days: number) => {
+    setLoggingGapDays(days);
+    window.localStorage.setItem('health-tracker-logging-gap-days', String(days));
   };
 
   const handleModalSuccess = () => {
@@ -647,6 +660,8 @@ export default function Home() {
             onChartRangeChange={handleDefaultChartRangeChange}
             weightDisplayUnit={weightDisplayUnit}
             onWeightDisplayUnitChange={handleWeightDisplayUnitChange}
+            loggingGapDays={loggingGapDays}
+            onLoggingGapDaysChange={handleLoggingGapDaysChange}
             onSuccess={() => { setIsProfileModalOpen(false); handleModalSuccess(); }}
           />
         </Modal>
@@ -776,22 +791,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label htmlFor="dashboard-range" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Date range
-            </label>
-            <select
-              id="dashboard-range"
-              value={activeChartRangeYears}
-              onChange={(event) => setActiveChartRangeYears(event.target.value === 'all' ? 'all' : Number(event.target.value))}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            >
-              <option value={1}>Last year</option>
-              <option value={2}>Last 2 years</option>
-              <option value={5}>Last 5 years</option>
-              <option value="all">All available data</option>
-            </select>
-          </div>
+          <ChartRangeControl id="dashboard-range" value={activeChartRangeYears} onChange={setActiveChartRangeYears} />
         </div>
 
         {dashboardView === 'data' ? (
@@ -839,6 +839,7 @@ export default function Home() {
               stressEntries={stressEntries}
               rangeYears={activeChartRangeYears}
               weightDisplayUnit={weightDisplayUnit}
+              loggingGapDays={loggingGapDays}
               loading={loading}
             />
             <SleepStressInsightChart

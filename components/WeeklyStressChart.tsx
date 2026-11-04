@@ -4,6 +4,7 @@ import { memo, useMemo } from 'react';
 import type { StressEntry } from '@/lib/types';
 import { aggregateDailyStress, aggregateMonthlyStress, aggregateWeeklyStress } from '@/lib/stressSummary';
 import type { WeeklyStressSummary } from '@/lib/stressSummary';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 
 interface WeeklyStressChartProps {
   entries: StressEntry[] | null;
@@ -99,10 +100,7 @@ function WeeklyStressChart({ entries, rangeYears, loading }: WeeklyStressChartPr
     if (!entries) return { chartData: [], calendarWeeks: [], monthlyData: [] };
 
     const sourceEntries = entries.length === 0 ? createSampleEntries(rangeYears) : entries;
-    const cutoffDate = new Date();
-    if (rangeYears !== 'all') {
-      cutoffDate.setFullYear(cutoffDate.getFullYear() - rangeYears);
-    }
+    const cutoffDate = rangeYears === 'all' ? new Date() : getChartRangeStart(rangeYears);
     const rangedEntries = rangeYears === 'all'
       ? sourceEntries
       : sourceEntries.filter((entry) => new Date(`${entry.date}T00:00:00`) >= cutoffDate);
@@ -156,7 +154,7 @@ function WeeklyStressChart({ entries, rangeYears, loading }: WeeklyStressChartPr
             <span className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Sample preview</span>
           )}
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {rangeYears === 'all' ? 'All available data' : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`}
+            {getChartRangeLabel(rangeYears)}
           </span>
         </div>
       </div>

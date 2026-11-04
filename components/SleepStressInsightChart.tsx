@@ -15,6 +15,7 @@ import type { SleepEntry, StressEntry } from '@/lib/types';
 import { pairSleepWithPriorDayStress } from '@/lib/insights';
 import type { SleepStressPair } from '@/lib/insights';
 import { getSleepTargetBand } from '@/lib/sleepSummary';
+import { getChartRangeStart } from '@/lib/chartRange';
 
 interface SleepStressInsightChartProps {
   sleepEntries: SleepEntry[] | null;
@@ -63,8 +64,7 @@ function filterRange<T extends { wakeDate: string }>(
   rangeYears: number | 'all',
 ): T[] {
   if (rangeYears === 'all') return entries;
-  const cutoff = new Date();
-  cutoff.setFullYear(cutoff.getFullYear() - rangeYears);
+  const cutoff = getChartRangeStart(rangeYears);
   const cutoffDate = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
   return entries.filter((entry) => entry.wakeDate >= cutoffDate);
 }

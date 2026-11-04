@@ -54,13 +54,18 @@ export interface LoggingGap {
   afterHighStress: boolean;
 }
 
+export const DEFAULT_LOGGING_GAP_DAYS = 21;
+
 export function buildWeightStressTimeline(
   biometrics: BiometricEntry[],
   stressEntries: StressEntry[],
   startDate: string,
   endDate: string,
   unit: 'kg' | 'lbs',
+  minimumGapDays = DEFAULT_LOGGING_GAP_DAYS,
 ): { points: WeightStressPoint[]; windows: StressWindow[]; gaps: LoggingGap[] } {
+  const gapThreshold = Number.isInteger(minimumGapDays) && minimumGapDays >= 1 && minimumGapDays <= 365
+    ? minimumGapDays : DEFAULT_LOGGING_GAP_DAYS;
   const weights = new Map<string, { totalKg: number; count: number }>();
   biometrics.forEach((entry) => {
     const date = entry.date.slice(0, 10);
@@ -104,7 +109,7 @@ export function buildWeightStressTimeline(
       const start = dateToUtcDay(date) + 86400000;
       const end = dates[index + 1] ? dateToUtcDay(dates[index + 1]) : rangeEnd;
       const days = (end - start) / 86400000;
-      if (days < 3 || start >= rangeEnd || end <= rangeStart) return;
+      if (days < gapThreshold || start >= rangeEnd || end <= rangeStart) return;
       gaps.push({ start, end, days, metric, afterHighStress: (stress.get(date) ?? 0) >= 8 });
     });
   }

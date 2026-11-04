@@ -536,6 +536,7 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     const Chart = loadModule('components/HealthMetricsChart.tsx', {
       recharts, '@/lib/weight': weight, '@/lib/healthRisk': healthRisk,
       '@/lib/bodyFat': loadModule('lib/bodyFat.ts').exports,
+      '@/lib/chartRange': loadModule('lib/chartRange.ts').exports,
     }).exports.default;
     renderToStaticMarkup(React.createElement(Chart, {
       biometrics, profile: { height: 175, height_unit: 'cm' }, rangeYears: 'all', weightDisplayUnit: unit,
@@ -1032,6 +1033,26 @@ test('insight helpers pair prior-day stress with wake-date sleep and estimate da
   assert.ok(balance[0].estimatedBalanceKcal > 0);
 });
 
+test('chart ranges support calendar months, three years, custom durations, and month-end clamping', () => {
+  const { getChartRangeStart, getChartRangeLabel, isValidChartRange } = loadModule('lib/chartRange.ts').exports;
+  const today = new Date(2026, 10, 3, 12);
+  const sixMonths = getChartRangeStart(0.5, today);
+  assert.equal(sixMonths.getFullYear(), 2026);
+  assert.equal(sixMonths.getMonth(), 4);
+  assert.equal(sixMonths.getDate(), 3);
+  assert.equal(getChartRangeStart(3, today).getFullYear(), 2023);
+  assert.equal(getChartRangeStart(9 / 12, today).getMonth(), 1);
+  assert.equal(getChartRangeStart(1 / 12, new Date(2026, 2, 31)).getDate(), 28);
+  assert.equal(getChartRangeStart(1, new Date(2024, 1, 29)).getDate(), 28);
+  assert.equal(today.getMonth(), 10);
+  assert.equal(getChartRangeLabel(0.5), 'Last 6 months');
+  assert.equal(getChartRangeLabel(3), 'Last 3 years');
+  assert.equal(getChartRangeLabel(9 / 12), 'Last 9 months');
+  assert.equal(getChartRangeLabel('all'), 'All available data');
+  for (const range of [0.5, 1, 2, 3, 5, 1 / 12, 9 / 12, 100]) assert.equal(isValidChartRange(range), true);
+  for (const range of [0, -1, NaN, Infinity, 101, 0.123]) assert.equal(isValidChartRange(range), false);
+});
+
 test('weight stress windows merge consecutive days without crossing gaps or low stress', () => {
   const weight = loadModule('lib/weight.ts').exports;
   const { buildWeightStressTimeline } = loadModule('lib/insights.ts', {
@@ -1095,7 +1116,7 @@ test('weight stress logging gaps exclude pre-tracking time and flag only immedia
     { date: '2026-10-18', stress_level: 2 },
     { date: '2026-10-22', stress_level: 9 },
   ];
-  const { gaps } = buildWeightStressTimeline(biometrics, stress, '2026-10-01', '2026-10-25', 'kg');
+  const { gaps } = buildWeightStressTimeline(biometrics, stress, '2026-10-01', '2026-10-25', 'kg', 3);
   assert.equal(gaps.length, 6);
   for (const metric of ['weight', 'stress']) {
     const matching = gaps.filter((gap) => gap.metric === metric);
@@ -1105,13 +1126,25 @@ test('weight stress logging gaps exclude pre-tracking time and flag only immedia
       { start: Date.parse('2026-10-23Z'), end: Date.parse('2026-10-26Z'), days: 3, metric, afterHighStress: true },
     ]);
   }
-  const ranged = buildWeightStressTimeline(biometrics, stress, '2026-10-13', '2026-10-14', 'kg');
+  const ranged = buildWeightStressTimeline(biometrics, stress, '2026-10-13', '2026-10-14', 'kg', 3);
   assert.equal(ranged.gaps.length, 2);
   assert.ok(ranged.gaps.every((gap) => gap.start === Date.parse('2026-10-11Z') && gap.afterHighStress));
   const absentStress = buildWeightStressTimeline(biometrics, [], '2026-10-01', '2026-10-25', 'kg');
   assert.ok(absentStress.gaps.every((gap) => gap.metric === 'weight' && !gap.afterHighStress));
   const empty = buildWeightStressTimeline([], [], '2026-10-01', '2026-10-25', 'kg');
   assert.equal(empty.gaps.length, 0);
+
+  const weeklyWeights = ['2026-09-01', '2026-09-08', '2026-09-15', '2026-10-07']
+    .map((date) => ({ date, metric_type: 'weight', value: 80, unit: 'kg' }));
+  const defaultGaps = buildWeightStressTimeline(weeklyWeights, [], '2026-09-01', '2026-10-07', 'kg').gaps;
+  assert.equal(defaultGaps.length, 1);
+  assert.equal(defaultGaps[0].days, 21);
+  assert.equal(defaultGaps[0].start, Date.parse('2026-09-16Z'));
+  assert.equal(buildWeightStressTimeline(weeklyWeights, [], '2026-09-01', '2026-10-07', 'kg', 22).gaps.length, 0);
+  assert.equal(buildWeightStressTimeline(weeklyWeights, [], '2026-09-01', '2026-10-07', 'kg', 6).gaps.length, 3);
+  for (const invalid of [0, -1, 1.5, NaN, 366]) {
+    assert.equal(buildWeightStressTimeline(weeklyWeights, [], '2026-09-01', '2026-10-07', 'kg', invalid).gaps.length, 1);
+  }
 });
 
 test('daily stress summaries average multiple readings without filling missing dates', () => {

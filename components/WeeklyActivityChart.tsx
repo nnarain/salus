@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import type { ActivityEntry } from '@/lib/types';
 import { aggregateWeeklyActivities, getWeekStart } from '@/lib/activitySummary';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 
 interface WeeklyActivityChartProps {
   activities: ActivityEntry[] | null;
@@ -95,10 +96,7 @@ function WeeklyActivityChart({ activities, rangeYears, loading }: WeeklyActivity
     if (!activities) return [];
 
     const sourceActivities = activities.length === 0 ? createSampleActivities() : activities;
-    const cutoffDate = new Date();
-    if (rangeYears !== 'all') {
-      cutoffDate.setFullYear(cutoffDate.getFullYear() - rangeYears);
-    }
+    const cutoffDate = rangeYears === 'all' ? new Date() : getChartRangeStart(rangeYears);
     const rangedActivities = rangeYears === 'all'
       ? sourceActivities
       : sourceActivities.filter((activity) => new Date(`${activity.date}T00:00:00`) >= cutoffDate);
@@ -126,7 +124,7 @@ function WeeklyActivityChart({ activities, rangeYears, loading }: WeeklyActivity
             <span className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Sample preview</span>
           )}
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {rangeYears === 'all' ? 'All available data' : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`}
+            {getChartRangeLabel(rangeYears)}
           </span>
         </div>
       </div>

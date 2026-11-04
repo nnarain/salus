@@ -4,6 +4,7 @@ import { memo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
 import type { BiometricEntry, BodyFatEstimate, UserProfile } from '@/lib/types';
 import { averageBodyFatPercentage } from '@/lib/bodyFat';
+import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
 import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
 
@@ -294,16 +295,13 @@ function HealthMetricsChart({
   weightDisplayUnit,
 }: HealthMetricsChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<string[]>(['bodyFatPercentage', 'estimatedBodyFatPercentage']);
-  const cutoffDate = new Date();
-  if (rangeYears !== 'all') {
-    cutoffDate.setFullYear(cutoffDate.getFullYear() - rangeYears);
-  }
+  const cutoffDate = rangeYears === 'all' ? new Date() : getChartRangeStart(rangeYears);
   const visibleBiometrics = rangeYears === 'all'
     ? biometrics
-    : biometrics.filter((entry) => new Date(entry.date) >= cutoffDate);
+    : biometrics.filter((entry) => new Date(`${entry.date.slice(0, 10)}T00:00:00`) >= cutoffDate);
   const visibleEstimates = rangeYears === 'all'
     ? bodyFatEstimates
-    : bodyFatEstimates.filter((estimate) => new Date(estimate.date) >= cutoffDate);
+    : bodyFatEstimates.filter((estimate) => new Date(`${estimate.date.slice(0, 10)}T00:00:00`) >= cutoffDate);
   const chartData = processChartData(visibleBiometrics, profile, visibleEstimates);
   const weightChartData = weightDisplayUnit === 'lbs'
     ? chartData.map((point) => ({
@@ -317,9 +315,7 @@ function HealthMetricsChart({
   const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
   const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
   const hasAveragedRisk = chartData.some((point) => point.averagedNormalizedRisk !== undefined);
-  const rangeLabel = rangeYears === 'all'
-    ? 'All available data'
-    : `Last ${rangeYears} ${rangeYears === 1 ? 'year' : 'years'}`;
+  const rangeLabel = getChartRangeLabel(rangeYears);
   if (chartData.length === 0) {
     return (
       <div className="space-y-6">
