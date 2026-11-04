@@ -1079,6 +1079,41 @@ test('weight stress windows merge consecutive days without crossing gaps or low 
   assert.ok(empty.points.every((point) => point.weight === undefined && point.stressLevel === undefined));
 });
 
+test('weight stress logging gaps exclude pre-tracking time and flag only immediately preceding high stress', () => {
+  const { buildWeightStressTimeline } = loadModule('lib/insights.ts', {
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/calorieEstimate': {},
+    '@/lib/sleepSummary': {},
+    '@/lib/stressSummary': loadModule('lib/stressSummary.ts').exports,
+    '@/lib/nutritionSummary': {},
+  }).exports;
+  const biometrics = ['2026-10-10', '2026-10-15', '2026-10-18', '2026-10-22']
+    .map((date) => ({ date, metric_type: 'weight', value: 80, unit: 'kg' }));
+  const stress = [
+    { date: '2026-10-10', stress_level: 9 },
+    { date: '2026-10-15', stress_level: 6 },
+    { date: '2026-10-18', stress_level: 2 },
+    { date: '2026-10-22', stress_level: 9 },
+  ];
+  const { gaps } = buildWeightStressTimeline(biometrics, stress, '2026-10-01', '2026-10-25', 'kg');
+  assert.equal(gaps.length, 6);
+  for (const metric of ['weight', 'stress']) {
+    const matching = gaps.filter((gap) => gap.metric === metric);
+    assert.deepEqual(JSON.parse(JSON.stringify(matching)), [
+      { start: Date.parse('2026-10-11Z'), end: Date.parse('2026-10-15Z'), days: 4, metric, afterHighStress: true },
+      { start: Date.parse('2026-10-19Z'), end: Date.parse('2026-10-22Z'), days: 3, metric, afterHighStress: false },
+      { start: Date.parse('2026-10-23Z'), end: Date.parse('2026-10-26Z'), days: 3, metric, afterHighStress: true },
+    ]);
+  }
+  const ranged = buildWeightStressTimeline(biometrics, stress, '2026-10-13', '2026-10-14', 'kg');
+  assert.equal(ranged.gaps.length, 2);
+  assert.ok(ranged.gaps.every((gap) => gap.start === Date.parse('2026-10-11Z') && gap.afterHighStress));
+  const absentStress = buildWeightStressTimeline(biometrics, [], '2026-10-01', '2026-10-25', 'kg');
+  assert.ok(absentStress.gaps.every((gap) => gap.metric === 'weight' && !gap.afterHighStress));
+  const empty = buildWeightStressTimeline([], [], '2026-10-01', '2026-10-25', 'kg');
+  assert.equal(empty.gaps.length, 0);
+});
+
 test('daily stress summaries average multiple readings without filling missing dates', () => {
   const { aggregateDailyStress } = loadModule('lib/stressSummary.ts').exports;
   const summaries = aggregateDailyStress([

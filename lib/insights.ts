@@ -46,18 +46,26 @@ export interface StressWindow {
   level: 'moderate' | 'high';
 }
 
+export interface LoggingGap {
+  start: number;
+  end: number;
+  days: number;
+  metric: 'weight' | 'stress';
+  afterHighStress: boolean;
+}
+
 export function buildWeightStressTimeline(
   biometrics: BiometricEntry[],
   stressEntries: StressEntry[],
   startDate: string,
   endDate: string,
   unit: 'kg' | 'lbs',
-): { points: WeightStressPoint[]; windows: StressWindow[] } {
+): { points: WeightStressPoint[]; windows: StressWindow[]; gaps: LoggingGap[] } {
   const weights = new Map<string, { totalKg: number; count: number }>();
   biometrics.forEach((entry) => {
     const date = entry.date.slice(0, 10);
     if (entry.metric_type !== 'weight' || !Number.isFinite(entry.value) || entry.value <= 0
-      || date < startDate || date > endDate) return;
+      || date > endDate) return;
     const daily = weights.get(date) ?? { totalKg: 0, count: 0 };
     daily.totalKg += entry.unit === 'lbs' ? poundsToKilograms(entry.value) : entry.value;
     daily.count++;
@@ -86,7 +94,22 @@ export function buildWeightStressTimeline(
       windows.push({ start: timestamp, end: timestamp + 86400000, level });
     }
   }
-  return { points, windows };
+  const gaps: LoggingGap[] = [];
+  const rangeStart = dateToUtcDay(startDate);
+  const rangeEnd = dateToUtcDay(endDate) + 86400000;
+  for (const metric of ['weight', 'stress'] as const) {
+    const dates = Array.from(metric === 'weight' ? weights.keys() : stress.keys())
+      .filter((date) => date <= endDate).sort();
+    dates.forEach((date, index) => {
+      const start = dateToUtcDay(date) + 86400000;
+      const end = dates[index + 1] ? dateToUtcDay(dates[index + 1]) : rangeEnd;
+      const days = (end - start) / 86400000;
+      if (days < 3 || start >= rangeEnd || end <= rangeStart) return;
+      gaps.push({ start, end, days, metric, afterHighStress: (stress.get(date) ?? 0) >= 8 });
+    });
+  }
+  gaps.sort((first, second) => first.start - second.start || first.metric.localeCompare(second.metric));
+  return { points, windows, gaps };
 }
 
 export function pairSleepWithPriorDayStress(
