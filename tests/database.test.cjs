@@ -682,6 +682,8 @@ test('sleep entry saves sleep session details with parameterized values', async 
   const handler = route('sleep', async (text, values) => {
     inserted = values;
     assert.match(text, /INSERT INTO sleep_entries/);
+    assert.match(text, /wake_date = \$1::date/);
+    assert.match(text, /SELECT \$1::date, \$2/);
     assert.match(text, /RETURNING \*/);
     return [sleepEntry];
   });

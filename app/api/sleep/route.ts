@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
          SET bedtime = $2, wake_time = $3, sleep_duration_minutes = $4, restedness = $5, notes = $6
          WHERE id = (
            SELECT id FROM sleep_entries, date_lock
-           WHERE wake_date = $1
+           WHERE wake_date = $1::date
            ORDER BY created_at DESC, id DESC
            LIMIT 1
          )
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
        ), inserted AS (
          INSERT INTO sleep_entries
            (wake_date, bedtime, wake_time, sleep_duration_minutes, restedness, notes)
-         SELECT $1, $2, $3, $4, $5, $6
+         SELECT $1::date, $2, $3, $4, $5, $6
          WHERE NOT EXISTS (SELECT 1 FROM updated)
          RETURNING *
        )
