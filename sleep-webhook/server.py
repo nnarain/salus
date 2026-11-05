@@ -4,7 +4,6 @@ Sleep as Android POSTs {"event": ..., "value1": ..., ...} for each enabled autom
 events carry no timestamps or sleep stats, so bedtime/wake are taken from when the events arrive.
 """
 
-import hmac
 import json
 import os
 import threading
@@ -13,12 +12,11 @@ import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 API_URL = os.environ.get("HEALTH_TRACKER_API_URL", "http://localhost:3000").rstrip("/")
 TIMEZONE = ZoneInfo(os.environ.get("TZ", "UTC"))
-TOKEN = os.environ.get("WEBHOOK_TOKEN", "")
 STATE_FILE = Path(os.environ.get("STATE_FILE", "/data/state.json"))
 MIN_SLEEP_MINUTES = int(os.environ.get("MIN_SLEEP_MINUTES", "120"))
 PORT = int(os.environ.get("PORT", "8000"))
@@ -103,46 +101,50 @@ def handle_event(event: str) -> None:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        self.reply(200 if urlsplit(self.path).path == "/health" else 404)
+        if urlsplit(self.path).path == "/health":
+            return self.reply(200, {"status": "ok", "service": "sleep-webhook"})
+        self.reply(404, {"error": "Not found"})
 
     def do_POST(self) -> None:
         url = urlsplit(self.path)
-        token = parse_qs(url.query).get("token", [""])[0]
         if url.path != "/webhook":
-            return self.reply(404)
-        if not hmac.compare_digest(token.encode(), TOKEN.encode()):
-            return self.reply(401)
+            return self.reply(404, {"error": "Not found; expected POST /webhook"})
 
         length = int(self.headers.get("Content-Length") or 0)
         if not 0 < length <= MAX_BODY_BYTES:
-            return self.reply(400)
+            return self.reply(400, {"error": f"Invalid body size; expected 1-{MAX_BODY_BYTES} bytes"})
         try:
-            event = json.loads(self.rfile.read(length))["event"]
-        except (ValueError, KeyError, TypeError):
-            return self.reply(400)
+            payload = json.loads(self.rfile.read(length))
+        except (ValueError, UnicodeDecodeError):
+            return self.reply(400, {"error": "Request body must be valid JSON"})
+        if not isinstance(payload, dict) or "event" not in payload:
+            return self.reply(400, {"error": "JSON body must contain an event field"})
+        event = payload["event"]
         if not isinstance(event, str):
-            return self.reply(400)
+            return self.reply(400, {"error": "event must be a string"})
 
         print(f"Received event: {event}", flush=True)
         try:
             handle_event(event)
         except Exception as error:
             print(f"Error handling {event}: {error}", flush=True)
-            return self.reply(502)
-        self.reply(200)
+            return self.reply(502, {"error": "Could not forward event to Health Tracker"})
+        self.reply(200, {"status": "received", "event": event})
 
-    def reply(self, status: int) -> None:
+    def reply(self, status: int, body: dict) -> None:
+        encoded = json.dumps(body).encode()
         self.send_response(status)
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
+        self.wfile.write(encoded)
+        print(f"{self.command} {urlsplit(self.path).path} -> {status}", flush=True)
 
     def log_message(self, format: str, *args) -> None:
-        # Default access log would print the token from the query string.
+        # reply() logs the request path and status without query parameters.
         pass
 
 
 if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("WEBHOOK_TOKEN must be set")
     print(f"Listening on :{PORT}, forwarding to {API_URL}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
