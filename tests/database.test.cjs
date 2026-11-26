@@ -489,6 +489,86 @@ test('muscle mass CSV import skips nonpositive values and non-kilogram units', a
   assert.equal(queries, 0);
 });
 
+test('risk journey projects comparable readings across three waypoints per zone', () => {
+  const { getRiskJourney, RISK_MILESTONES } = loadModule('lib/riskJourney.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+  }).exports;
+  assert.equal(RISK_MILESTONES.length, 9);
+  assert.deepEqual(Array.from(RISK_MILESTONES).filter((value) => value >= 0.67).length, 3);
+  assert.deepEqual(Array.from(RISK_MILESTONES).filter((value) => value < 0.67 && value >= 0.33).length, 3);
+  assert.deepEqual(Array.from(RISK_MILESTONES).filter((value) => value < 0.33).length, 3);
+  const today = new Date('2026-11-25T12:00:00Z');
+  const entries = [
+    { date: '2026-11-15', metric_type: 'waistline', value: 44, unit: 'inches' },
+    { date: '2026-11-15', metric_type: 'body_fat_percentage', value: 30, unit: '%' },
+    { date: '2026-11-25', metric_type: 'waistline', value: 42, unit: 'inches' },
+    { date: '2026-11-25', metric_type: 'body_fat_percentage', value: 28, unit: '%' },
+  ];
+  const journey = getRiskJourney(entries, { height: 70, height_unit: 'inches' }, today);
+  assert.equal(journey.zone, 'High Risk');
+  assert.ok(Math.abs(journey.waist.value - 0.6) < 1e-10);
+  assert.equal(journey.trend.days, 10);
+  assert.ok(journey.trend.change < 0);
+  assert.ok(Math.abs(journey.waistTrend.change - (-5.08)) < 1e-10);
+  assert.equal(journey.waistTrend.days, 10);
+  assert.equal(journey.bodyFatTrend.change, -2);
+  assert.equal(journey.bodyFatTrend.days, 10);
+  assert.equal(journey.nextMilestone, 0.78);
+  assert.ok(journey.milestoneDays > 0);
+  assert.ok(journey.nextZoneDays > journey.milestoneDays);
+  assert.ok(journey.lowRiskDays > journey.nextZoneDays);
+  assert.equal(getRiskJourney([], null, today), null);
+});
+
+test('risk journey reports individual recent measurement changes without treating carried readings as new', () => {
+  const { getRiskJourney } = loadModule('lib/riskJourney.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+  }).exports;
+  const today = new Date('2026-11-25T12:00:00Z');
+  const profile = { height: 175, height_unit: 'cm' };
+  const entries = [
+    { date: '2026-11-01', metric_type: 'waistline', value: 110, unit: 'cm' },
+    { date: '2026-11-14', metric_type: 'waistline', value: 40, unit: 'inches' },
+    { date: '2026-11-15', metric_type: 'body_fat_percentage', value: 30, unit: '%' },
+    { date: '2026-11-20', metric_type: 'body_fat_percentage', value: 29, unit: '%' },
+    { date: '2026-11-24', metric_type: 'waistline', value: 100, unit: 'cm' },
+  ];
+  const journey = getRiskJourney(entries, profile, today);
+  assert.ok(Math.abs(journey.waistTrend.change - (-1.6)) < 1e-10);
+  assert.equal(journey.waistTrend.days, 10);
+  assert.equal(journey.bodyFatTrend.change, -1);
+  assert.equal(journey.bodyFatTrend.days, 5);
+  const oneWaist = getRiskJourney(entries.filter((entry) => entry.date !== '2026-11-14'), profile, today);
+  assert.equal(oneWaist.waistTrend, null);
+  assert.equal(oneWaist.bodyFatTrend.change, -1);
+  assert.equal(getRiskJourney(entries, profile, new Date('2027-01-01T12:00:00Z')).bodyFatTrend, null);
+});
+
+test('risk journey does not project stale, incomparable, stable or worsening data', () => {
+  const { getRiskJourney } = loadModule('lib/riskJourney.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+  }).exports;
+  const today = new Date('2026-11-25T12:00:00Z');
+  const fat = (date, value) => ({ date, metric_type: 'body_fat_percentage', value, unit: '%' });
+  const waist = (date, value) => ({ date, metric_type: 'waistline', value, unit: 'cm' });
+  const profile = { height: 175, height_unit: 'cm' };
+  assert.equal(getRiskJourney([fat('2026-11-01', 30), fat('2026-11-10', 28)], profile, today).trend, null);
+  assert.equal(getRiskJourney([fat('2026-11-15', 30), fat('2026-11-25', 28), waist('2026-11-25', 100)], profile, today).trend, null);
+  assert.equal(getRiskJourney([waist('2026-09-01', 100), fat('2026-11-15', 30), fat('2026-11-25', 28)], profile, today).trend, null);
+  const pastEstimate = getRiskJourney([fat('2026-11-15', 31), fat('2026-11-20', 28)], profile, today);
+  assert.ok(pastEstimate.trend.change < 0);
+  assert.equal(pastEstimate.milestoneDays, null);
+  for (const end of [30, 31]) {
+    const journey = getRiskJourney([fat('2026-11-15', 30), fat('2026-11-25', end)], profile, today);
+    assert.equal(journey.milestoneDays, null);
+    assert.equal(journey.nextZoneDays, null);
+  }
+  const low = getRiskJourney([fat('2026-11-25', 18)], profile, today);
+  assert.equal(low.zone, 'Low Risk');
+  assert.equal(low.nextMilestone, null);
+  assert.equal(low.nextZone, null);
+});
+
 test('body composition averages available body fat sources without inventing missing values', () => {
   const { averageBodyFatPercentage } = loadModule('lib/bodyFat.ts').exports;
   assert.equal(averageBodyFatPercentage(20, 24), 22);
