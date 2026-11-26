@@ -12,6 +12,7 @@ import CsvImportForm from '@/components/CsvImportForm';
 import CsvExportForm from '@/components/CsvExportForm';
 import Modal from '@/components/Modal';
 import StatCard from '@/components/StatCard';
+import ZoneMilestoneCard from '@/components/ZoneMilestoneCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import HealthMetricsChart from '@/components/HealthMetricsChart';
@@ -86,6 +87,7 @@ export default function Home() {
   const [waistHeightRatio, setWaistHeightRatio] = useState<number | null>(null);
   const [bodyFatPercentage, setBodyFatPercentage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [journeyError, setJourneyError] = useState<string | null>(null);
   const [biometrics, setBiometrics] = useState<BiometricEntry[]>([]);
   const [bodyFatEstimates, setBodyFatEstimates] = useState<BodyFatEstimate[]>([]);
   const [activities, setActivities] = useState<ActivityEntry[] | null>(null);
@@ -176,10 +178,12 @@ export default function Home() {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setJourneyError(null);
 
       // Fetch biometrics data
       const biometricsResponse = await fetch('/api/biometrics');
       const biometricsData = await biometricsResponse.json();
+      if (!biometricsResponse.ok) setJourneyError('Unable to load biometric data for the health journey.');
       setBodyFatEstimates(biometricsResponse.ok && Array.isArray(biometricsData.bodyFatEstimates)
         ? biometricsData.bodyFatEstimates : []);
 
@@ -202,6 +206,7 @@ export default function Home() {
       // Fetch profile data
         const profileResponse = await fetch('/api/profile');
         const profileData = await profileResponse.json();
+        if (!profileResponse.ok) setJourneyError('Unable to load your profile for the health journey.');
 
         if (biometricsData.data && Array.isArray(biometricsData.data)) {
           const biometricsArray: BiometricEntry[] = biometricsData.data;
@@ -281,6 +286,7 @@ export default function Home() {
         }
       } catch (error) {
         console.error('Error fetching data:', error);
+        setJourneyError('Unable to load data for the health journey. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -398,6 +404,8 @@ export default function Home() {
             Salus
           </h1>
         </div>
+
+        <ZoneMilestoneCard biometrics={biometrics} profile={profile} loading={loading} error={journeyError} />
 
         {/* Key Metrics Display */}
         <section aria-label="Key metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
