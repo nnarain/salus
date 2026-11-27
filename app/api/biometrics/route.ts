@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Muscle mass unit must be "kg"' }, { status: 400 });
     }
 
-    const hasScaleMin = body.scale_min !== undefined;
-    const hasScaleMax = body.scale_max !== undefined;
+    const hasScaleMin = body.scale_min != null;
+    const hasScaleMax = body.scale_max != null;
     if ((hasScaleMin || hasScaleMax) && !isVisceralFat) {
       return NextResponse.json({ error: 'Scale bounds are only supported for visceral fat levels' }, { status: 400 });
     }
