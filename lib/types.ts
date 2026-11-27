@@ -7,8 +7,8 @@ export interface BiometricEntry {
   metric_type: string;
   value: number;
   unit: string;
-  scale_min?: number;
-  scale_max?: number;
+  scale_min?: number | null;
+  scale_max?: number | null;
   notes?: string;
 }
 

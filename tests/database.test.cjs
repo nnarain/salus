@@ -381,6 +381,48 @@ test('weight API entries normalize pounds to kilograms before storage', async ()
   assert.equal(inserted[3], 'kg');
 });
 
+test('biometric API accepts omitted or null scale bounds from MCP for every metric', async () => {
+  const entries = [
+    { metric_type: 'weight', value: 72, unit: 'kg' },
+    { metric_type: 'waistline', value: 90, unit: 'cm' },
+    { metric_type: 'body_fat_percentage', value: 20, unit: '%' },
+    { metric_type: 'muscle_mass', value: 56, unit: 'kg' },
+    { metric_type: 'visceral_fat_level', value: 0, unit: 'level' },
+  ];
+  for (const entry of entries) {
+    for (const bounds of [{}, { scale_min: null, scale_max: null }]) {
+      const body = { date: '2026-10-31', ...entry, ...bounds };
+      let queries = 0;
+      const handler = route('biometrics', async (_text, values) => {
+        queries++;
+        assert.equal(values[4], null);
+        assert.equal(values[5], null);
+        return [body];
+      });
+      const response = await handler.POST(postRequest(body));
+      assert.equal(response.status, 201, JSON.stringify(body));
+      assert.equal(queries, 1);
+      assert.deepEqual((await response.json()).data, [body]);
+    }
+  }
+});
+
+test('biometric API rejects actual scale bounds for non-visceral metrics', async () => {
+  const handler = route('biometrics', async () => { throw new Error('Unexpected query'); });
+  for (const entry of [
+    { metric_type: 'weight', unit: 'kg' },
+    { metric_type: 'waistline', unit: 'cm' },
+    { metric_type: 'body_fat_percentage', unit: '%' },
+    { metric_type: 'muscle_mass', unit: 'kg' },
+  ]) {
+    const response = await handler.POST(postRequest({
+      date: '2026-10-31', value: 50, ...entry, scale_min: 0, scale_max: 100,
+    }));
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /only supported for visceral fat/);
+  }
+});
+
 test('visceral fat API entries allow zero and persist optional scale bounds', async () => {
   let inserted;
   const visceralEntry = {
@@ -408,6 +450,8 @@ test('visceral fat API rejects incomplete or incompatible scale ranges', async (
   };
 
   assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: 0 }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: 0, scale_max: null }))).status, 400);
+  assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: null, scale_max: 15 }))).status, 400);
   assert.equal((await handler.POST(postRequest({ ...validEntry, scale_min: 0, scale_max: 7 }))).status, 400);
   assert.equal((await handler.POST(postRequest({ ...validEntry, unit: '%' }))).status, 400);
 });

@@ -470,7 +470,10 @@ async def add_biometric(
     scale_min: float | None = None,
     scale_max: float | None = None,
 ) -> dict:
-    """Log a single biometric. Units: weight kg/lbs (stored as kg), muscle mass kg, waistline cm/inches, body fat %."""
+    """Log a single biometric. Units: weight kg/lbs (stored as kg), muscle mass kg, waistline cm/inches, body fat %, visceral fat level.
+
+    Scale bounds are optional and apply only to visceral fat; provide both or leave both unset/null.
+    """
     return await post("biometrics", {
         "date": parse_date(date).isoformat(), "metric_type": metric_type, "value": value, "unit": unit,
         "scale_min": scale_min, "scale_max": scale_max, "notes": notes,
