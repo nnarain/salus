@@ -1,5 +1,7 @@
 // Health risk calculation utilities
 
+import type { BiometricEntry } from '@/lib/types';
+
 /**
  * Health anchors for body fat percentage
  * Based on general health research for metabolic health
@@ -37,16 +39,27 @@ export function normalizeHealthMetric(
   return Math.max(0, Math.min(1, score));
 }
 
+export function getVisceralFatScaleRatio(entry: BiometricEntry | undefined): number | null {
+  if (!entry || entry.scale_min == null || entry.scale_max == null
+    || !Number.isFinite(entry.value) || !Number.isFinite(entry.scale_min)
+    || !Number.isFinite(entry.scale_max) || entry.scale_min >= entry.scale_max) {
+    return null;
+  }
+  return normalizeHealthMetric(entry.value, entry.scale_min, entry.scale_max);
+}
+
 /**
- * Calculate averaged health risk indicator from body fat % and waist-to-height ratio
+ * Average the available normalized body fat, waist-to-height, and visceral fat scores.
  * 
  * @param bodyFatPercentage - Body fat percentage value (optional)
  * @param waistHeightRatio - Waist-to-height ratio value (optional)
+ * @param visceralFatRatio - Visceral fat normalized against its own device range (optional)
  * @returns Averaged health risk score (0-1) or null if no metrics available
  */
 export function calculateHealthRiskIndicator(
   bodyFatPercentage?: number,
-  waistHeightRatio?: number
+  waistHeightRatio?: number,
+  visceralFatRatio?: number
 ): number | null {
   const scores: number[] = [];
 
@@ -66,6 +79,10 @@ export function calculateHealthRiskIndicator(
       WAIST_HEIGHT_ANCHORS.threshold
     );
     scores.push(waistHeightScore);
+  }
+
+  if (visceralFatRatio !== undefined && Number.isFinite(visceralFatRatio)) {
+    scores.push(Math.max(0, Math.min(1, visceralFatRatio)));
   }
 
   // Return average if we have at least one score

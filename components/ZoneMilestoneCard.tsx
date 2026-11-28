@@ -65,32 +65,52 @@ export default function ZoneMilestoneCard({ biometrics, profile, loading, error 
       ) : error ? (
         <p role="alert" className="mt-5 text-sm text-red-700 dark:text-red-400">{error}</p>
       ) : !journey ? (
-        <p className="mt-5 text-sm text-gray-600 dark:text-gray-400">Add a body fat measurement or a waist measurement and height to see your journey.</p>
+        <p className="mt-5 text-sm text-gray-600 dark:text-gray-400">Add body fat, waist and height, or visceral fat with a device range to see your journey.</p>
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Health risk indicator <span className="text-xs">(lower is better)</span></p>
               <p className="text-3xl font-bold text-gray-900 dark:text-white">{journey.score.toFixed(2)} <span className="text-sm font-normal text-gray-500 dark:text-gray-400">/ 1.00</span></p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Based on {[journey.waist && 'waist-to-height', journey.bodyFat && 'body fat', journey.visceralFat && 'visceral fat'].filter(Boolean).join(', ')}
+              </p>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-300 sm:text-right">
+            <div className="text-sm text-gray-600 dark:text-gray-300 sm:max-w-md sm:text-right">
               {journey.trend ? (
                 <>
                   <p className="font-semibold">{journey.trend.change < -0.0001 ? '↓ Improving' : journey.trend.change > 0.0001 ? '↑ Increasing' : '→ Stable'}</p>
                 </>
-              ) : <p>Keep logging to see a trend</p>}
+              ) : <p className="font-semibold">Trend not ready</p>}
               {journey.waist && (
                 <p>Waist: {journey.waistTrend
                   ? formatChange(journey.waistTrend.change / (journey.waist.unit === 'inches' ? 2.54 : 1), journey.waist.unit === 'inches' ? 'in' : 'cm', journey.waistTrend.days)
-                  : 'Not enough recent readings'}</p>
+                  : journey.waistTrendUnavailableReason}</p>
               )}
               {journey.bodyFat && (
                 <p>Body fat: {journey.bodyFatTrend
                   ? formatChange(journey.bodyFatTrend.change, 'percentage points', journey.bodyFatTrend.days)
-                  : 'Not enough recent readings'}</p>
+                  : journey.bodyFatTrendUnavailableReason}</p>
+              )}
+              {journey.visceralFat && (
+                <p>Visceral fat: {journey.visceralFatTrend
+                  ? formatChange(journey.visceralFatTrend.change * 100, 'device-range percentage points', journey.visceralFatTrend.days)
+                  : journey.visceralFatTrendUnavailableReason}</p>
               )}
             </div>
           </div>
+
+          {journey.nextMilestone !== null && journey.estimateUnavailableReason && (
+            <div className="mt-5 rounded-lg bg-gray-50 p-4 text-sm text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+              <p className="font-semibold">
+                {journey.trendUnavailableReason ? 'What is missing for a trend' : 'Why date estimates are unavailable'}
+              </p>
+              <p className="mt-1">
+                {journey.trendCoverage.dateCount} comparable indicator dates in the past 14 days, spanning {journey.trendCoverage.spanDays} {journey.trendCoverage.spanDays === 1 ? 'day' : 'days'}.
+              </p>
+              <p className="mt-1">{journey.estimateUnavailableReason}</p>
+            </div>
+          )}
 
           <div className="mt-7 px-2">
             <div className="relative h-5 rounded-full bg-gradient-to-r from-red-500 via-amber-400 to-emerald-500" aria-hidden="true">
@@ -113,15 +133,24 @@ export default function ZoneMilestoneCard({ biometrics, profile, loading, error 
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Next milestone{journey.nextMilestone !== null ? ` · ${journey.nextMilestone.toFixed(2)}` : ''}</dt>
               <dd className="mt-1 text-lg font-bold text-blue-700 dark:text-blue-400">{journey.nextMilestone === null ? 'All waypoints reached' : formatEstimate(journey.milestoneDays, journey.today)}</dd>
+              {journey.nextMilestone !== null && journey.milestoneDays === null && !journey.estimateUnavailableReason && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">The projected date is today or earlier. Log fresh measurements to recalculate.</p>
+              )}
             </div>
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Next zone</dt>
               <dd className="mt-1 text-lg font-bold text-gray-900 dark:text-white">{journey.nextZone ? formatEstimate(journey.nextZoneDays, journey.today) : 'Low risk'}</dd>
               {journey.nextZone && <p className="text-xs text-gray-500 dark:text-gray-400">to {journey.nextZone.label}</p>}
+              {journey.nextZone && journey.nextZoneDays === null && !journey.estimateUnavailableReason && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">The projected date is today or earlier. Log fresh measurements to recalculate.</p>
+              )}
             </div>
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Low risk</dt>
               <dd className="mt-1 text-lg font-bold text-emerald-700 dark:text-emerald-400">{journey.zone === 'Low Risk' ? 'Current zone' : formatEstimate(journey.lowRiskDays, journey.today)}</dd>
+              {journey.zone !== 'Low Risk' && journey.lowRiskDays === null && !journey.estimateUnavailableReason && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">The projected date is today or earlier. Log fresh measurements to recalculate.</p>
+              )}
             </div>
           </dl>
         </>
@@ -130,12 +159,14 @@ export default function ZoneMilestoneCard({ biometrics, profile, loading, error 
         <div className="space-y-5 text-gray-700 dark:text-gray-300">
           <section>
             <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Health risk indicator</h3>
-            <p>Waist-to-height ratio and logged body fat percentage are normalized to a 0–1 scale and averaged when both are available. If only one is available, the indicator uses that measurement alone. Lower scores represent lower risk on this scale; weight and other tracked metrics are not included.</p>
+            <p>Waist-to-height ratio, logged body fat percentage, and visceral fat are normalized to a 0–1 scale and equally averaged across the available factors. Visceral fat uses each reading&apos;s own device minimum and maximum, clamped to 0–1. Missing or invalid device ranges are excluded, not treated as zero. If only one factor is available, the indicator uses it alone. Weight and RFM estimates are not included.</p>
+            <p className="mt-2 text-sm">Lower is better on this app-defined scale. A proprietary visceral fat scale is not a clinical risk threshold; the combined indicator is not a diagnosis.</p>
             {journey && (
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 Current indicator based on {[
                   journey.waist && `waist-to-height (${journey.waist.date})`,
                   journey.bodyFat && `logged body fat (${journey.bodyFat.date})`,
+                  journey.visceralFat && `scaled visceral fat (${journey.visceralFat.date})`,
                 ].filter(Boolean).join(' and ')}.
               </p>
             )}
@@ -146,7 +177,14 @@ export default function ZoneMilestoneCard({ biometrics, profile, loading, error 
           </section>
           <section>
             <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Trend and estimates</h3>
-            <p>The indicator trend compares recent readings using the same available measurements. Waist and body fat changes compare each measure&apos;s own readings from the last 14 days, over at least 3 days. Body fat change is shown in percentage points. Estimates extrapolate an improving indicator pace from the latest reading; they are not deadlines. They may be unavailable when readings are too sparse or old, the trend is not improving, or an estimated date has passed.</p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>A trend needs at least two comparable indicator dates, at least 3 calendar days apart, each dated no more than 14 days ago. For example, Monday and Thursday qualify; Monday, Tuesday, and Wednesday span only 2 days and do not yet qualify. Consecutive daily entries are not required.</li>
+              <li>Both indicator dates must use the same available factors. Measurements may be logged on different days; each date uses the latest reading for each factor, provided it is no more than 30 days old. Current contributing readings must also be no more than 30 days old. This freshness limit is separate from the 14-day comparison window.</li>
+              <li>Individual changes use each factor&apos;s own reading dates within the same 14-day window, at least 3 days apart. Body fat changes use percentage points; visceral fat changes use normalized device-range percentage points.</li>
+              <li>Date estimates additionally require a decreasing indicator. Stable or increasing trends do not produce dates. If a projected date is today or earlier, it is unavailable until fresh measurements allow it to be recalculated.</li>
+              <li>These are moving calendar windows. As readings age, availability can change; reload the page or log new measurements to recheck it. Old demo data may need updating rather than more entries on the same date.</li>
+            </ul>
+            <p className="mt-3 text-sm">Dates extrapolate an improving pace from the latest reading; they are not deadlines or clinical predictions.</p>
           </section>
         </div>
       </Modal>

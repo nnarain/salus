@@ -533,6 +533,218 @@ test('muscle mass CSV import skips nonpositive values and non-kilogram units', a
   assert.equal(queries, 0);
 });
 
+test('health risk equally averages available body fat, waist, and scaled visceral fat', () => {
+  const { calculateHealthRiskIndicator } = loadModule('lib/healthRisk.ts').exports;
+  assert.ok(Math.abs(calculateHealthRiskIndicator(25, 0.515, 0.8) - 0.6) < 1e-10);
+  assert.ok(Math.abs(calculateHealthRiskIndicator(25, undefined, 0.8) - 0.65) < 1e-10);
+  assert.equal(calculateHealthRiskIndicator(undefined, undefined, 0), 0);
+  assert.equal(calculateHealthRiskIndicator(undefined, undefined, 2), 1);
+  assert.equal(calculateHealthRiskIndicator(undefined, undefined, -1), 0);
+  assert.equal(calculateHealthRiskIndicator(), null);
+  for (const unavailable of [undefined, null, NaN, Infinity]) {
+    assert.equal(calculateHealthRiskIndicator(25, 0.515, unavailable),
+      calculateHealthRiskIndicator(25, 0.515));
+    assert.equal(calculateHealthRiskIndicator(undefined, undefined, unavailable), null);
+  }
+});
+
+test('risk history and hero use latest independently scaled visceral fat with comparable trends', () => {
+  const healthRisk = loadModule('lib/healthRisk.ts').exports;
+  const { getRiskHistory, getRiskJourney } = loadModule('lib/riskJourney.ts', {
+    '@/lib/healthRisk': healthRisk,
+  }).exports;
+  const today = new Date('2026-11-26T12:00:00Z');
+  const profile = { height: 200, height_unit: 'cm' };
+  const visceral = (date, scale_max) => ({
+    date, metric_type: 'visceral_fat_level', value: 8, unit: 'level', scale_min: 0, scale_max,
+  });
+  const entries = [
+    visceral('2026-11-25', 10),
+    { date: '2026-11-14', metric_type: 'body_fat_percentage', value: 25, unit: '%' },
+    { date: '2026-11-14', metric_type: 'waistline', value: 103, unit: 'cm' },
+    visceral('2026-11-15', 40),
+  ];
+  const original = JSON.stringify(entries);
+  const history = getRiskHistory(entries, profile, today);
+  const journey = getRiskJourney(entries, profile, today);
+  assert.ok(Math.abs(journey.score - 0.6) < 1e-10);
+  assert.equal(journey.score, history.at(-1).score);
+  assert.equal(journey.visceralFat.value, 0.8);
+  assert.equal(journey.visceralFat.level, 8);
+  assert.equal(journey.currentDate, '2026-11-25');
+  assert.equal(journey.trend.days, 10);
+  assert.ok(Math.abs(journey.trend.change - 0.2) < 1e-10);
+  assert.ok(Math.abs(journey.visceralFatTrend.change - 0.6) < 1e-10);
+  assert.equal(journey.visceralFatTrend.days, 10);
+  assert.equal(journey.milestoneDays, null);
+  assert.equal(JSON.stringify(entries), original);
+
+  const missing = getRiskJourney([...entries, visceral('2026-11-26', undefined)], profile, today);
+  assert.equal(missing.visceralFat, undefined);
+  assert.ok(Math.abs(missing.score - 0.5) < 1e-10);
+  assert.equal(missing.trend, null);
+  const addedFactor = getRiskJourney(entries.filter(entry => entry.date !== '2026-11-15'), profile, today);
+  assert.equal(addedFactor.trend, null);
+  const stale = getRiskJourney([
+    visceral('2026-09-01', 10),
+    { ...entries[1], date: '2026-11-15', value: 30 },
+    { ...entries[1], date: '2026-11-25', value: 25 },
+  ], profile, today);
+  assert.equal(stale.trend, null);
+  assert.equal(stale.milestoneDays, null);
+  const zero = getRiskJourney([{ ...visceral('2026-11-25', 10), value: 0 }], null, today);
+  assert.equal(zero.score, 0);
+  assert.equal(zero.visceralFat.value, 0);
+  assert.equal(getRiskJourney([visceral('2026-11-25', undefined)], null, today), null);
+});
+
+test('normalized health graph includes visceral fat and the same historical composite as the hero', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const healthRisk = loadModule('lib/healthRisk.ts').exports;
+  const journey = loadModule('lib/riskJourney.ts', { '@/lib/healthRisk': healthRisk }).exports;
+  const charts = [];
+  let riskView = 'trends';
+  let current;
+  const container = ({ children }) => children ?? null;
+  const capture = ({ data, children }) => { current = { data, lines: [], areas: [], zones: [] }; charts.push(current); return children; };
+  const Chart = loadModule('components/HealthMetricsChart.tsx', {
+    react: {
+      ...React,
+      useState(initial) {
+        const state = React.useState(initial);
+        return initial === 'trends' ? [riskView, state[1]] : state;
+      },
+    },
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/healthRisk': healthRisk,
+    '@/lib/riskJourney': journey,
+    '@/lib/bodyFat': loadModule('lib/bodyFat.ts').exports,
+    '@/lib/chartRange': loadModule('lib/chartRange.ts').exports,
+    recharts: {
+      LineChart: capture, ComposedChart: capture, ResponsiveContainer: container,
+      XAxis: () => null, YAxis: () => null, CartesianGrid: () => null,
+      Legend: () => null,
+      ReferenceArea: (props) => { current.zones.push(props); return null; },
+      Area: (props) => { current.areas.push(props); return null; },
+      Line: (props) => { current.lines.push(props); return null; },
+      Tooltip: ({ content }) => { current.tooltip = content; return null; },
+    },
+  }).exports.default;
+  const profile = { height: 200, height_unit: 'cm' };
+  const biometrics = [
+    { date: '2026-11-24', metric_type: 'body_fat_percentage', value: 25, unit: '%' },
+    { date: '2026-11-24', metric_type: 'waistline', value: 103, unit: 'cm' },
+    { date: '2026-11-25', metric_type: 'visceral_fat_level', value: 8, unit: 'level', scale_min: 0, scale_max: 10, created_at: '2026-11-25T09:00:00Z' },
+    { date: '2026-11-25', metric_type: 'visceral_fat_level', value: 8, unit: 'level', scale_min: 0, scale_max: 40, created_at: '2026-11-25T08:00:00Z' },
+  ];
+  const render = (entries) => renderToStaticMarkup(React.createElement(Chart, {
+    biometrics: entries, profile, rangeYears: 'all', weightDisplayUnit: 'kg',
+  }));
+  const html = render(biometrics);
+  const normalized = charts[0];
+  assert.equal(normalized.areas.length, 0);
+  assert.match(html, /Normalized Visceral Fat/);
+  assert.match(html, /Main progression indicator/);
+  assert.match(html, /Contributing factors.*equal weight when available/);
+  const visceralLine = normalized.lines.find(line => line.dataKey === 'normalizedVisceralFat');
+  assert.ok(visceralLine);
+  assert.equal(visceralLine.connectNulls, false);
+  const primaryLine = normalized.lines.at(-1);
+  assert.equal(primaryLine.dataKey, 'averagedNormalizedRisk');
+  assert.ok(normalized.lines.slice(0, -1).every(line => line.strokeWidth < primaryLine.strokeWidth
+    && line.strokeOpacity < 1 && line.strokeDasharray));
+  assert.equal(normalized.data[1].normalizedVisceralFat, 0.8);
+  assert.equal(normalized.data[1].averagedNormalizedRisk, 0.6);
+  assert.equal(normalized.data[1].healthRisk, 0.6);
+  assert.equal(normalized.data[1].averagedNormalizedRisk,
+    Number(journey.getRiskJourney(biometrics, profile).score.toFixed(3)));
+  const Hero = loadModule('components/ZoneMilestoneCard.tsx', {
+    '@/lib/riskJourney': journey,
+    '@/components/Modal': { default: () => null },
+  }).exports.default;
+  const hero = renderToStaticMarkup(React.createElement(Hero, {
+    biometrics, profile, loading: false, error: null,
+  }));
+  assert.match(hero, /0\.60/);
+  assert.match(hero, /Based on waist-to-height, body fat, visceral fat/);
+  const tooltip = renderToStaticMarkup(React.cloneElement(normalized.tooltip, {
+    active: true,
+    payload: [{ dataKey: 'normalizedVisceralFat', name: 'Normalized Visceral Fat', value: 0.8, color: '#f97316', payload: normalized.data[1] }],
+  }));
+  assert.match(tooltip, /0\.800/);
+  assert.match(tooltip, /device-scale position/i);
+  assert.match(tooltip, /Health risk indicator/);
+  assert.match(tooltip, /0\.600/);
+  assert.match(tooltip, /divided by 3/);
+  assert.match(tooltip, /0\.267/);
+  assert.match(tooltip, /Reading: 2026-11-24/);
+  assert.match(tooltip, /Factor contributions to the overall 0-1 score/);
+  assert.equal(normalized.data[1].riskFactors.length, 3);
+  const contributionSum = normalized.data[1].riskFactors
+    .reduce((sum, factor, _, factors) => sum + factor.score / factors.length, 0);
+  assert.ok(Math.abs(contributionSum - normalized.data[1].averagedNormalizedRisk) < 1e-10);
+  render([...biometrics, { ...biometrics[2], date: '2026-11-26', scale_max: undefined }]);
+  const missing = charts[2].data[2];
+  assert.equal(missing.normalizedVisceralFat, undefined);
+  assert.equal(missing.averagedNormalizedRisk, 0.5);
+  assert.equal(missing.riskFactors.length, 2);
+  const missingTooltip = renderToStaticMarkup(React.cloneElement(charts[2].tooltip, {
+    active: true,
+    payload: [{ dataKey: 'averagedNormalizedRisk', name: 'Health risk indicator', value: 0.5, color: '#7c3aed', payload: missing }],
+  }));
+  assert.match(missingTooltip, /divided by 2/);
+  assert.match(missingTooltip, /0\.250/);
+  assert.doesNotMatch(missingTooltip, /Visceral fat/);
+  render([{ ...biometrics[2], value: 0 }]);
+  const zero = charts[4].data[0];
+  const zeroTooltip = renderToStaticMarkup(React.cloneElement(charts[4].tooltip, {
+    active: true,
+    payload: [{ dataKey: 'averagedNormalizedRisk', name: 'Health risk indicator', value: 0, color: '#7c3aed', payload: zero }],
+  }));
+  assert.match(zeroTooltip, /divided by 1/);
+  assert.match(zeroTooltip, /0\.000/);
+  assert.equal(zero.riskFactors[0].score, 0);
+
+  riskView = 'contributions';
+  const stackedEntries = [
+    ...biometrics.map(entry => entry.metric_type === 'body_fat_percentage' ? { ...entry, value: 23.41 } : entry),
+    { ...biometrics[2], date: '2026-11-26', scale_max: undefined },
+    { date: '2026-11-27', metric_type: 'weight', value: 80, unit: 'kg' },
+  ];
+  const stackedHtml = render(stackedEntries);
+  const stacked = charts.at(-2);
+  assert.match(stackedHtml, /combined top edge is the purple overall indicator/);
+  assert.equal(stacked.areas.length, 3);
+  assert.ok(stacked.areas.every(area => area.stackId === 'risk-contributions'
+    && area.type === 'linear' && area.connectNulls === false && area.fillOpacity < 0.5));
+  assert.equal(stacked.lines.length, 1);
+  assert.equal(stacked.lines[0].dataKey, 'contributionTotal');
+  assert.equal(stacked.lines[0].type, 'linear');
+  assert.equal(stacked.zones.length, normalized.zones.length);
+  for (const point of stacked.data.filter(point => point.riskFactors)) {
+    const total = stacked.areas.reduce((sum, area) => sum + point[area.dataKey], 0);
+    assert.ok(Math.abs(total - point.contributionTotal) < 1e-12);
+    for (const factor of point.riskFactors) {
+      assert.equal(point[factor.contributionKey], factor.score / point.riskFactors.length);
+    }
+  }
+  assert.equal(stacked.data[2].visceralFatContribution, 0);
+  assert.equal(stacked.data[2].riskFactors.length, 2);
+  assert.equal(stacked.data[3].contributionTotal, undefined);
+  assert.ok(stacked.areas.every(area => stacked.data[3][area.dataKey] === undefined));
+  render([{ ...biometrics[2], value: 0 }]);
+  const zeroStack = charts.at(-2);
+  assert.equal(zeroStack.areas.length, 1);
+  assert.equal(zeroStack.areas[0].dataKey, 'visceralFatContribution');
+  assert.equal(zeroStack.data[0].contributionTotal, 0);
+  assert.equal(zeroStack.data[0].visceralFatContribution, 0);
+  riskView = 'trends';
+  render(biometrics);
+  assert.equal(charts.at(-2).areas.length, 0);
+  assert.equal(charts.at(-2).lines.at(-1).dataKey, 'averagedNormalizedRisk');
+});
+
 test('risk journey projects comparable readings across three waypoints per zone', () => {
   const { getRiskJourney, RISK_MILESTONES } = loadModule('lib/riskJourney.ts', {
     '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
@@ -586,6 +798,80 @@ test('risk journey reports individual recent measurement changes without treatin
   assert.equal(oneWaist.waistTrend, null);
   assert.equal(oneWaist.bodyFatTrend.change, -1);
   assert.equal(getRiskJourney(entries, profile, new Date('2027-01-01T12:00:00Z')).bodyFatTrend, null);
+});
+
+test('risk journey explains elapsed time, comparison windows, stale factors, and unavailable estimates', () => {
+  const module = loadModule('lib/riskJourney.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+  }).exports;
+  const { getRiskJourney } = module;
+  const today = new Date('2026-11-28T12:00:00Z');
+  const fat = (date, value) => ({ date, metric_type: 'body_fat_percentage', value, unit: '%' });
+  const consecutive = [fat('2026-11-25', 30), fat('2026-11-26', 29), fat('2026-11-27', 28)];
+  const short = getRiskJourney(consecutive, null, today);
+  assert.equal(short.trend, null);
+  assert.equal(short.trendCoverage.dateCount, 3);
+  assert.equal(short.trendCoverage.spanDays, 2);
+  assert.match(short.trendUnavailableReason, /need 1 more day of separation/);
+  assert.match(short.trendUnavailableReason, /on or after 2026-11-28/);
+  assert.match(short.bodyFatTrendUnavailableReason, /need 1 more day/);
+  const endpoints = getRiskJourney([consecutive[0], fat('2026-11-28', 27)], null, today);
+  assert.equal(endpoints.trendCoverage.dateCount, 2);
+  assert.equal(endpoints.trend.days, 3);
+  assert.equal(endpoints.trendUnavailableReason, null);
+  assert.equal(endpoints.estimateUnavailableReason, null);
+  assert.ok(endpoints.milestoneDays > 0);
+  assert.ok(endpoints.lowRiskDays > 0);
+  const onlyOne = getRiskJourney([fat('2026-11-25', 30)], null, today);
+  assert.match(onlyOne.trendUnavailableReason, /Only 1 of the required 2/);
+  const outside = getRiskJourney([fat('2026-11-13', 30), fat('2026-11-28', 28)], null, today);
+  assert.equal(outside.trendCoverage.dateCount, 1);
+  assert.match(outside.trendUnavailableReason, /Only 1 of the required 2/);
+  const boundary = getRiskJourney([fat('2026-11-14', 30), fat('2026-11-28', 28)], null, today);
+  assert.equal(boundary.trend.days, 14);
+  const noRecent = getRiskJourney([fat('2026-11-10', 28)], null, today);
+  assert.match(noRecent.trendUnavailableReason, /No comparable indicator dates in the past 14 days/);
+  const profile = { height: 175, height_unit: 'cm' };
+  const waist = (date) => ({ date, metric_type: 'waistline', value: 100, unit: 'cm' });
+  const stale = getRiskJourney([waist('2026-10-28'), consecutive[0], fat('2026-11-28', 27)], profile, today);
+  assert.equal(stale.trend, null);
+  assert.match(stale.trendUnavailableReason, /Refresh waist-to-height.*31 days old/);
+  const freshBoundary = getRiskJourney([waist('2026-10-29'), consecutive[0], fat('2026-11-28', 27)], profile, today);
+  assert.ok(freshBoundary.trend);
+  const changedFactors = getRiskJourney([...consecutive, waist('2026-11-28')], profile, today);
+  assert.equal(changedFactors.trendCoverage.dateCount, 1);
+  assert.match(changedFactors.trendUnavailableReason, /same available factors/);
+  for (const value of [30, 31]) {
+    const notImproving = getRiskJourney([consecutive[0], fat('2026-11-28', value)], null, today);
+    assert.ok(notImproving.trend);
+    assert.equal(notImproving.trendUnavailableReason, null);
+    assert.equal(notImproving.milestoneDays, null);
+    assert.match(notImproving.estimateUnavailableReason, /stable or increasing/);
+  }
+  const passed = getRiskJourney([fat('2026-11-18', 31), fat('2026-11-23', 28)], null, today);
+  assert.ok(passed.trend);
+  assert.equal(passed.estimateUnavailableReason, null);
+  assert.equal(passed.milestoneDays, null);
+
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const Hero = loadModule('components/ZoneMilestoneCard.tsx', {
+    '@/lib/riskJourney': { ...module, getRiskJourney: (entries, profile) => getRiskJourney(entries, profile, today) },
+    '@/components/Modal': { default: () => null },
+  }).exports.default;
+  const render = (biometrics) => renderToStaticMarkup(React.createElement(Hero, {
+    biometrics, profile: null, loading: false, error: null,
+  }));
+  assert.match(render(consecutive), /What is missing for a trend/);
+  assert.match(render(consecutive), /need 1 more day of separation/);
+  assert.match(render([consecutive[0], fat('2026-11-28', 31)]), /Why date estimates are unavailable/);
+  assert.match(render([fat('2026-11-18', 31), fat('2026-11-23', 28)]), /projected date is today or earlier/);
+  const ready = render([consecutive[0], fat('2026-11-28', 27)]);
+  assert.doesNotMatch(ready, /What is missing for a trend|Why date estimates are unavailable|Recent trend coverage|comparable indicator dates/);
+  assert.match(ready, /~\d/);
+  const reached = render([fat('2026-11-28', 18)]);
+  assert.doesNotMatch(reached, /What is missing for a trend|comparable indicator dates/);
+  assert.match(reached, /All waypoints reached/);
 });
 
 test('risk journey does not project stale, incomparable, stable or worsening data', () => {
@@ -659,6 +945,7 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
     };
     const Chart = loadModule('components/HealthMetricsChart.tsx', {
       recharts, '@/lib/weight': weight, '@/lib/healthRisk': healthRisk,
+      '@/lib/riskJourney': loadModule('lib/riskJourney.ts', { '@/lib/healthRisk': healthRisk }).exports,
       '@/lib/bodyFat': loadModule('lib/bodyFat.ts').exports,
       '@/lib/chartRange': loadModule('lib/chartRange.ts').exports,
     }).exports.default;
@@ -706,8 +993,8 @@ test('body composition plots actual percentages and a shared weight/muscle mass 
       assert.equal(composition.data[2].bodyFatPercentage, undefined);
       assert.equal(composition.data[2].averageBodyFatPercentage, 22.8);
       assert.equal(composition.data[2].normalizedBodyFat, undefined);
-      assert.equal(composition.data[2].averagedNormalizedRisk, undefined);
-      const waistRisk = healthRisk.calculateHealthRiskIndicator(undefined, composition.data[2].waistHeightRatio);
+      const waistRisk = healthRisk.calculateHealthRiskIndicator(20, 85 / 175);
+      assert.equal(composition.data[2].averagedNormalizedRisk, Number(waistRisk.toFixed(3)));
       assert.equal(composition.data[2].healthRisk, Number(waistRisk.toFixed(3)));
     }
     const tooltip = renderToStaticMarkup(React.cloneElement(composition.tooltip, {
@@ -1037,8 +1324,125 @@ test('maintenance estimates aggregate meals and exclude estimated or partial day
   assert.equal(estimate.nutritionDays, 13);
 });
 
+test('visceral fat scale position uses the entry bounds and clamps out-of-range values', () => {
+  const { getVisceralFatScaleRatio } = loadModule('lib/healthRisk.ts').exports;
+  const entry = {
+    date: '2026-10-31', metric_type: 'visceral_fat_level', unit: 'level',
+    value: 10, scale_min: 5, scale_max: 25,
+  };
+  assert.equal(getVisceralFatScaleRatio(entry), 0.25);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 15 }), 0.5);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 5 }), 0);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 25 }), 1);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 0 }), 0);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 30 }), 1);
+  assert.equal(getVisceralFatScaleRatio({ ...entry, value: 0, scale_min: 0 }), 0);
+  for (const invalid of [
+    undefined, { ...entry, scale_min: null }, { ...entry, scale_max: undefined },
+    { ...entry, scale_max: 5 }, { ...entry, scale_max: 4 },
+    { ...entry, scale_min: NaN }, { ...entry, scale_max: Infinity },
+    { ...entry, value: NaN }, { ...entry, value: Infinity },
+  ]) {
+    assert.equal(getVisceralFatScaleRatio(invalid), null);
+  }
+});
+
+test('visceral fat chart data normalizes every entry independently and preserves missing ranges', () => {
+  const { getVisceralFatChartData } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
+  }).exports;
+  const base = { date: '2026-10-31', metric_type: 'visceral_fat_level', unit: 'level' };
+  const entries = [
+    { ...base, value: 15, scale_min: 10, scale_max: 20, created_at: '2026-10-31T09:00:00Z' },
+    { ...base, value: 15, scale_min: 0, scale_max: 30, date: '2026-10-29' },
+    { ...base, value: 15, scale_min: 5, scale_max: 45, created_at: '2026-10-31T08:00:00Z' },
+    { ...base, value: 15, date: '2026-10-30' },
+    { ...base, value: 10, metric_type: 'body_fat_percentage' },
+  ];
+  const original = JSON.stringify(entries);
+  const points = getVisceralFatChartData(entries);
+  assert.equal(JSON.stringify(points.map(point => point.ratio)), '[0.5,null,0.25,0.5]');
+  assert.equal(points[2].scale_min, 5);
+  assert.equal(points[3].scale_max, 20);
+  assert.equal(JSON.stringify(entries), original);
+});
+
+test('visceral fat plot uses a fixed 0-1 axis, range filtering, gaps, and original-value tooltips', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const metrics = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
+    '@/lib/weight': loadModule('lib/weight.ts').exports,
+    '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
+  }).exports;
+  let chart;
+  const container = ({ children }) => children ?? null;
+  const Chart = loadModule('components/VisceralFatChart.tsx', {
+    '@/lib/dashboardMetrics': metrics,
+    '@/lib/chartRange': loadModule('lib/chartRange.ts').exports,
+    recharts: {
+      ResponsiveContainer: container, CartesianGrid: () => null,
+      LineChart: ({ data, children }) => { chart = { data }; return children; },
+      XAxis: (props) => { chart.xAxis = props; return null; },
+      YAxis: (props) => { chart.yAxis = props; return null; },
+      ReferenceArea: () => null,
+      Tooltip: ({ content }) => { chart.tooltip = content; return null; },
+      Line: (props) => { chart.line = props; return null; },
+    },
+  }).exports.default;
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const base = { date, metric_type: 'visceral_fat_level', value: 24, unit: 'level', scale_min: 0, scale_max: 30 };
+  const biometrics = [
+    { ...base, date: '2000-01-01', value: 0 },
+    { ...base, scale_max: undefined },
+    base,
+  ];
+  const render = (props = {}) => renderToStaticMarkup(React.createElement(Chart, {
+    biometrics, rangeYears: 'all', loading: false, ...props,
+  }));
+  const html = render();
+  assert.equal(JSON.stringify(chart.yAxis.domain), '[0,1]');
+  assert.equal(chart.xAxis.scale, 'time');
+  assert.equal(JSON.stringify(chart.data.map(point => point.ratio)), '[0,null,0.8]');
+  assert.equal(chart.line.connectNulls, false);
+  assert.match(html, /1 measurement\(s\).*not plotted/);
+  const tooltip = renderToStaticMarkup(React.cloneElement(chart.tooltip, {
+    active: true, payload: [{ payload: chart.data[2] }],
+  }));
+  assert.match(tooltip, /0\.800 \(80%\)/);
+  assert.match(tooltip, /Visceral fat: 24 level/);
+  assert.match(tooltip, /Device range: 0 to 30/);
+  const zeroDot = renderToStaticMarkup(chart.line.dot({ cx: 10, cy: 10, payload: chart.data[0] }));
+  assert.match(zeroDot, /fill="hsl\(120, 75%, 45%\)"/);
+  assert.equal(renderToStaticMarkup(chart.line.dot({ cx: 10, cy: 10, payload: chart.data[1] })), '');
+  render({ rangeYears: 1 });
+  assert.equal(JSON.stringify(chart.data.map(point => point.ratio)), '[null,0.8]');
+  assert.match(render({ biometrics: [] }), /No scaled visceral fat measurements/);
+  assert.match(render({ loading: true }), /Loading visceral fat data/);
+  assert.match(render({ error: 'Unable to load biometric data.' }), /role="alert".*Unable to load biometric data/);
+});
+
+test('stat cards render dynamic border colors without changing the neutral default', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const StatCard = loadModule('components/StatCard.tsx').exports.default;
+  const props = { title: 'Visceral Fat Level', value: 10 };
+  const colored = renderToStaticMarkup(React.createElement(StatCard, {
+    ...props, style: { borderColor: 'hsl(60, 75%, 45%)' },
+  }));
+  assert.match(colored, /style="border-color:hsl\(60, 75%, 45%\)"/);
+  assert.match(colored, /Visceral Fat Level/);
+  const neutral = renderToStaticMarkup(React.createElement(StatCard, props));
+  assert.match(neutral, /border-blue-200 dark:border-blue-700/);
+  assert.doesNotMatch(neutral, /style=/);
+});
+
 test('seven-day nutrition average uses only recorded days and reports coverage', () => {
   const { getSevenDayCalorieSummary } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
     '@/lib/weight': loadModule('lib/weight.ts').exports,
     '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
@@ -1055,6 +1459,7 @@ test('seven-day nutrition average uses only recorded days and reports coverage',
 
 test('seven-day calorie coverage aggregates meals and excludes estimated or partial days', () => {
   const { getSevenDayCalorieSummary } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
     '@/lib/weight': loadModule('lib/weight.ts').exports,
     '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
@@ -1071,6 +1476,7 @@ test('seven-day calorie coverage aggregates meals and excludes estimated or part
 
 test('30-day weight trend compares monthly averages and converts pounds to kilograms', () => {
   const { getThirtyDayWeightTrend, createSampleThirtyDayWeightTrend } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
     '@/lib/weight': loadModule('lib/weight.ts').exports,
     '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;
@@ -1095,6 +1501,7 @@ test('30-day weight trend compares monthly averages and converts pounds to kilog
 
 test('summary colors distinguish calorie balance and contextualize weight direction', () => {
   const { getCalorieBalanceTone, getWeightTrendTone } = loadModule('lib/dashboardMetrics.ts', {
+    '@/lib/healthRisk': loadModule('lib/healthRisk.ts').exports,
     '@/lib/weight': loadModule('lib/weight.ts').exports,
     '@/lib/nutritionSummary': loadModule('lib/nutritionSummary.ts').exports,
   }).exports;

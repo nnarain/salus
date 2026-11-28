@@ -10,6 +10,7 @@ interface StatCardProps {
   borderColor?: string;
   descriptionColor?: string;
   valueColor?: string;
+  style?: React.CSSProperties;
   children?: React.ReactNode;
 }
 
@@ -24,10 +25,11 @@ export default function StatCard({
   borderColor = 'border-blue-200 dark:border-blue-700',
   descriptionColor = 'text-xs text-gray-500 dark:text-gray-400 mt-1',
   valueColor = 'text-gray-900 dark:text-white',
+  style,
   children,
 }: StatCardProps) {
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 ${borderColor} hover:shadow-xl transition-all`}>
+    <div style={style} className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-2 ${borderColor} hover:shadow-xl transition-all`}>
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">

@@ -1,6 +1,7 @@
 import type { BiometricEntry, NutritionEntry } from '@/lib/types';
 import { poundsToKilograms } from '@/lib/weight';
 import { aggregateDailyNutrition } from '@/lib/nutritionSummary';
+import { getVisceralFatScaleRatio } from '@/lib/healthRisk';
 
 export interface SevenDayCalorieSummary {
   averageIntakeKcal?: number;
@@ -20,6 +21,32 @@ export interface ThirtyDayWeightTrend {
 export type SummaryTone = 'green' | 'blue' | 'yellow' | 'red';
 
 export const CALORIE_BALANCE_TOLERANCE_KCAL = 100;
+
+export function getVisceralFatScaleColor(ratio: number): string {
+  return `hsl(${120 * (1 - ratio)}, 75%, 45%)`;
+}
+
+export interface VisceralFatChartPoint {
+  date: string;
+  value: number;
+  scale_min?: number | null;
+  scale_max?: number | null;
+  ratio: number | null;
+}
+
+export function getVisceralFatChartData(entries: BiometricEntry[]): VisceralFatChartPoint[] {
+  return entries
+    .filter((entry) => entry.metric_type === 'visceral_fat_level')
+    .sort((first, second) => first.date.localeCompare(second.date)
+      || (first.created_at ?? '').localeCompare(second.created_at ?? ''))
+    .map((entry) => ({
+      date: entry.date,
+      value: entry.value,
+      scale_min: entry.scale_min,
+      scale_max: entry.scale_max,
+      ratio: getVisceralFatScaleRatio(entry),
+    }));
+}
 
 function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10);

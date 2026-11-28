@@ -1,12 +1,13 @@
 "use client";
 
 import { memo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
+import { Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ComposedChart } from 'recharts';
 import type { BiometricEntry, BodyFatEstimate, UserProfile } from '@/lib/types';
 import { averageBodyFatPercentage } from '@/lib/bodyFat';
 import { getChartRangeLabel, getChartRangeStart } from '@/lib/chartRange';
 import { kilogramsToPounds, poundsToKilograms } from '@/lib/weight';
-import { calculateHealthRiskIndicator, getRiskLevelDescription, getRiskLevelColor, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
+import { getRiskLevelDescription, getRiskLevelColor, getVisceralFatScaleRatio, normalizeHealthMetric, BODY_FAT_ANCHORS, WAIST_HEIGHT_ANCHORS } from '@/lib/healthRisk';
+import { getRiskHistory } from '@/lib/riskJourney';
 
 interface HealthMetricsChartProps {
   biometrics: BiometricEntry[];
@@ -27,8 +28,28 @@ interface ChartDataPoint {
   healthRisk?: number;
   normalizedWaistHeight?: number;
   normalizedBodyFat?: number;
+  normalizedVisceralFat?: number;
   averagedNormalizedRisk?: number;
+  riskFactors?: RiskFactor[];
+  waistContribution?: number;
+  bodyFatContribution?: number;
+  visceralFatContribution?: number;
+  contributionTotal?: number;
 }
+
+interface RiskFactor {
+  contributionKey: 'waistContribution' | 'bodyFatContribution' | 'visceralFatContribution';
+  name: string;
+  score: number;
+  date: string;
+  color: string;
+}
+
+const CONTRIBUTION_SERIES = [
+  { dataKey: 'waistContribution', name: 'Waist-to-height', color: '#ec4899' },
+  { dataKey: 'bodyFatContribution', name: 'Body fat %', color: '#06b6d4' },
+  { dataKey: 'visceralFatContribution', name: 'Visceral fat', color: '#f97316' },
+] as const;
 
 interface TooltipPayloadItem {
   dataKey: string;
@@ -120,6 +141,9 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit, showRiskInsights = 
             const normalized = entry.value;
             color = getRiskLevelColor(normalized);
             insight = ` (${getRiskLevelDescription(normalized)})`;
+          } else if (entry.dataKey === 'normalizedVisceralFat' && entry.value !== undefined) {
+            color = getRiskLevelColor(entry.value);
+            insight = ' (Device-scale position)';
           } else if (entry.dataKey === 'averagedNormalizedRisk' && entry.value !== undefined) {
             const normalized = entry.value;
             color = getRiskLevelColor(normalized);
@@ -155,6 +179,58 @@ const CustomTooltip = ({ active, payload, weightDisplayUnit, showRiskInsights = 
   }
   return null;
 };
+
+function NormalizedRiskTooltip({ active, payload }: Pick<CustomTooltipProps, 'active' | 'payload'>) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  const factors = point.riskFactors ?? [];
+  return (
+    <div className="max-w-sm rounded-lg border border-violet-200 bg-white p-4 shadow-xl dark:border-violet-700 dark:bg-gray-800">
+      <p className="mb-2 text-sm font-semibold text-gray-600 dark:text-gray-300">{point.date}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Health risk indicator</p>
+      <p className="mt-1 text-2xl font-bold text-violet-700 dark:text-violet-300">
+        {point.averagedNormalizedRisk?.toFixed(3) ?? 'Unavailable'}
+        {point.averagedNormalizedRisk !== undefined && <span className="ml-2 text-sm font-normal">/ 1 · {getRiskLevelDescription(point.averagedNormalizedRisk)}</span>}
+      </p>
+      {factors.length > 0 && (
+        <>
+          <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+            Each factor contributes its normalized score divided by {factors.length}.
+          </p>
+          <div role="img" aria-label="Factor contributions to the overall 0-1 score" className="mt-2 flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+            {factors.map((factor) => <span key={factor.name} style={{ backgroundColor: factor.color, width: `${factor.score / factors.length * 100}%` }} />)}
+          </div>
+          <table className="mt-3 w-full text-xs text-gray-700 dark:text-gray-200">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="pb-2 text-left font-medium">Contributing factor</th>
+                <th className="pb-2 pl-3 text-right font-medium">Score</th>
+                <th className="pb-2 pl-3 text-right font-medium">Contribution</th>
+              </tr>
+            </thead>
+            <tbody>
+              {factors.map((factor) => (
+                <tr key={factor.name}>
+                  <td className="pt-2">
+                    <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: factor.color }} />
+                    {factor.name}
+                    <span className="block text-gray-500 dark:text-gray-400">Reading: {factor.date}</span>
+                  </td>
+                  <td className="pt-2 pl-3 text-right tabular-nums">{factor.score.toFixed(3)}</td>
+                  <td className="pt-2 pl-3 text-right font-semibold tabular-nums">{(factor.score / factors.length).toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Latest available readings as of this date. Values shown are rounded.</p>
+          {factors.some((factor) => factor.name === 'Visceral fat') && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Visceral fat: device-scale position, not a clinical risk threshold.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // Helper function to get risk level category
 const getRiskLevel = (riskScore: number | undefined): 'low' | 'moderate' | 'high' | null => {
@@ -195,10 +271,13 @@ const generateRiskZones = (chartData: ChartDataPoint[]): RiskZone[] => {
 };
 
 // Process biometric data into chart format
-const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | null, bodyFatEstimates: BodyFatEstimate[]): ChartDataPoint[] => {
+const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | null, bodyFatEstimates: BodyFatEstimate[], riskEntries: BiometricEntry[]): ChartDataPoint[] => {
   const dataByDate = new Map<string, ChartDataPoint>();
+  const riskByDate = new Map(getRiskHistory(riskEntries, profile).map((point) => [point.date, point]));
 
-  biometrics.forEach((entry) => {
+  biometrics.slice().sort((first, second) => first.date.localeCompare(second.date)
+    || (first.created_at ?? '').localeCompare(second.created_at ?? '')
+    || (first.id ?? '').localeCompare(second.id ?? '')).forEach((entry) => {
     const date = entry.date;
     if (!dataByDate.has(date)) {
       dataByDate.set(date, { date });
@@ -232,6 +311,8 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
       dataPoint.bodyFatPercentage = Number(entry.value.toFixed(1));
     } else if (entry.metric_type === 'muscle_mass') {
       dataPoint.muscleMass = Number(entry.value.toFixed(1));
+    } else if (entry.metric_type === 'visceral_fat_level') {
+      dataPoint.normalizedVisceralFat = getVisceralFatScaleRatio(entry) ?? undefined;
     }
   });
 
@@ -250,12 +331,32 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
   chartData.forEach((dataPoint) => {
     dataPoint.averageBodyFatPercentage = averageBodyFatPercentage(
       dataPoint.bodyFatPercentage, dataPoint.estimatedBodyFatPercentage);
-    const healthRisk = calculateHealthRiskIndicator(
-      dataPoint.bodyFatPercentage,
-      dataPoint.waistHeightRatio
-    );
-    if (healthRisk !== null) {
-      dataPoint.healthRisk = Number(healthRisk.toFixed(3));
+    const snapshot = riskByDate.get(dataPoint.date);
+    if (snapshot?.score != null) {
+      dataPoint.healthRisk = Number(snapshot.score.toFixed(3));
+      dataPoint.averagedNormalizedRisk = dataPoint.healthRisk;
+      const factors: RiskFactor[] = [];
+      if (snapshot.waist) factors.push({
+        contributionKey: 'waistContribution',
+        name: 'Waist-to-height', color: '#ec4899', date: snapshot.waist.date,
+        score: normalizeHealthMetric(snapshot.waist.value, WAIST_HEIGHT_ANCHORS.ideal, WAIST_HEIGHT_ANCHORS.threshold),
+      });
+      if (snapshot.bodyFat) factors.push({
+        contributionKey: 'bodyFatContribution',
+        name: 'Body fat %', color: '#06b6d4', date: snapshot.bodyFat.date,
+        score: normalizeHealthMetric(snapshot.bodyFat.value, BODY_FAT_ANCHORS.ideal, BODY_FAT_ANCHORS.threshold),
+      });
+      if (snapshot.visceralFat) factors.push({
+        contributionKey: 'visceralFatContribution',
+        name: 'Visceral fat', color: '#f97316', date: snapshot.visceralFat.date,
+        score: snapshot.visceralFat.value,
+      });
+      dataPoint.riskFactors = factors;
+      dataPoint.waistContribution = 0;
+      dataPoint.bodyFatContribution = 0;
+      dataPoint.visceralFatContribution = 0;
+      for (const factor of factors) dataPoint[factor.contributionKey] = factor.score / factors.length;
+      dataPoint.contributionTotal = snapshot.score;
     }
 
     // Calculate normalized values
@@ -276,12 +377,6 @@ const processChartData = (biometrics: BiometricEntry[], profile: UserProfile | n
       );
       dataPoint.normalizedBodyFat = Number(normalized.toFixed(3));
     }
-
-    // Calculate averaged normalized risk
-    if (dataPoint.normalizedWaistHeight !== undefined && dataPoint.normalizedBodyFat !== undefined) {
-      const average = (dataPoint.normalizedWaistHeight + dataPoint.normalizedBodyFat) / 2;
-      dataPoint.averagedNormalizedRisk = Number(average.toFixed(3));
-    }
   });
 
   return chartData;
@@ -295,6 +390,7 @@ function HealthMetricsChart({
   weightDisplayUnit,
 }: HealthMetricsChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<string[]>(['bodyFatPercentage', 'estimatedBodyFatPercentage']);
+  const [riskView, setRiskView] = useState<'trends' | 'contributions'>('trends');
   const cutoffDate = rangeYears === 'all' ? new Date() : getChartRangeStart(rangeYears);
   const visibleBiometrics = rangeYears === 'all'
     ? biometrics
@@ -302,7 +398,7 @@ function HealthMetricsChart({
   const visibleEstimates = rangeYears === 'all'
     ? bodyFatEstimates
     : bodyFatEstimates.filter((estimate) => new Date(`${estimate.date.slice(0, 10)}T00:00:00`) >= cutoffDate);
-  const chartData = processChartData(visibleBiometrics, profile, visibleEstimates);
+  const chartData = processChartData(visibleBiometrics, profile, visibleEstimates, biometrics);
   const weightChartData = weightDisplayUnit === 'lbs'
     ? chartData.map((point) => ({
       ...point,
@@ -314,7 +410,10 @@ function HealthMetricsChart({
   const hasEstimatedBodyFat = compositionData.some((point) => point.estimatedBodyFatPercentage !== undefined);
   const hasNormalizedWaist = chartData.some((point) => point.normalizedWaistHeight !== undefined);
   const hasNormalizedBodyFat = chartData.some((point) => point.normalizedBodyFat !== undefined);
+  const hasNormalizedVisceralFat = chartData.some((point) => point.normalizedVisceralFat !== undefined);
   const hasAveragedRisk = chartData.some((point) => point.averagedNormalizedRisk !== undefined);
+  const contributionSeries = CONTRIBUTION_SERIES.filter((series) =>
+    chartData.some((point) => point.riskFactors?.some((factor) => factor.contributionKey === series.dataKey)));
   const rangeLabel = getChartRangeLabel(rangeYears);
   if (chartData.length === 0) {
     return (
@@ -342,33 +441,79 @@ function HealthMetricsChart({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Health Risk Metrics (Normalized)</h2>
-          <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-lg border border-gray-300 p-1 dark:border-gray-600" role="group" aria-label="Risk chart view">
+              {(['trends', 'contributions'] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={riskView === view}
+                  onClick={() => setRiskView(view)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-violet-600 ${riskView === view
+                    ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                >
+                  {view === 'trends' ? 'Trends' : 'Contributions'}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{rangeLabel}</span>
+          </div>
         </div>
         <div className="mb-4">
+          {hasAveragedRisk && (
+            <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 p-4 dark:border-violet-700 dark:bg-violet-950/30">
+              <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Main progression indicator</p>
+              <div className="mt-1 flex items-center gap-3">
+                <span className="w-10 border-t-4 border-violet-600" aria-hidden="true" />
+                <span className="text-lg font-bold text-violet-800 dark:text-violet-200">Health risk indicator (average)</span>
+              </div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                The bold purple line combines the factors below into the same overall score used by Health Progression.
+                Hover a date to see each factor&apos;s contribution.
+              </p>
+            </div>
+          )}
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Contributing factors · equal weight when available</p>
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
-            {hasNormalizedWaist && (
-              <div className="flex items-center gap-2">
-                <div className="w-5 border-t-2 border-pink-500"></div>
-                <span>Normalized Waist-to-Height Ratio</span>
+            {riskView === 'contributions' ? contributionSeries.map((series) => (
+              <div key={series.dataKey} className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: series.color }} />
+                <span>{series.name}</span>
               </div>
-            )}
-            {hasNormalizedBodyFat && (
-              <div className="flex items-center gap-2">
-                <div className="w-5 border-t-2 border-dashed border-cyan-500"></div>
-                <span>Normalized Body Fat %</span>
-              </div>
-            )}
-            {hasAveragedRisk && (
-              <div className="flex items-center gap-2">
-                <div className="w-5 border-t-[3px] border-violet-500"></div>
-                <span>Averaged Health Risk</span>
-              </div>
+            )) : (
+              <>
+                {hasNormalizedWaist && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 border-t-2 border-dashed border-pink-500"></div>
+                    <span>Normalized Waist-to-Height Ratio</span>
+                  </div>
+                )}
+                {hasNormalizedBodyFat && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 border-t-2 border-dashed border-cyan-500"></div>
+                    <span>Normalized Body Fat %</span>
+                  </div>
+                )}
+                {hasNormalizedVisceralFat && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 border-t-2 border-dashed border-orange-500"></div>
+                    <span>Normalized Visceral Fat</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            {riskView === 'contributions'
+              ? 'Colored bands show each normalized factor score divided by the number of available factors. Their combined top edge is the purple overall indicator; the background zones apply to that total.'
+              : 'Compare the normalized factor lines to see which measurements are changing faster or slower.'}
+          </p>
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
             <p>💡 Normalized metrics show health risk on a 0-1 scale where 0 = ideal health, 1 = high risk threshold.</p>
             <p>💡 Waist-to-Height: 0 = {WAIST_HEIGHT_ANCHORS.ideal}, 1 = {WAIST_HEIGHT_ANCHORS.threshold} | Body Fat: 0 = {BODY_FAT_ANCHORS.ideal}%, 1 = {BODY_FAT_ANCHORS.threshold}%</p>
-            <p>💡 Averaged Health Risk appears when both metrics are recorded on the same date.</p>
+            <p>💡 Visceral Fat: 0 = device minimum, 1 = device maximum, using each entry&apos;s own range. Device scales are proprietary, not clinical risk thresholds.</p>
+            <p>💡 Averaged Health Risk equally weights the latest available logged waist-to-height, body fat, and scaled visceral fat readings as of each measurement date. Missing factors are not counted as zero.</p>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={400}>
@@ -389,38 +534,71 @@ function HealthMetricsChart({
                 return value.toFixed(1);
               }}
             />
-            <Tooltip content={<CustomTooltip weightDisplayUnit={weightDisplayUnit} />} />
+            <Tooltip content={<NormalizedRiskTooltip />} />
             {/* Reference lines for risk levels */}
             <ReferenceArea y1={0} y2={0.33} fill="rgba(34, 197, 94, 0.1)" fillOpacity={1} />
             <ReferenceArea y1={0.33} y2={0.67} fill="rgba(251, 191, 36, 0.1)" fillOpacity={1} />
             <ReferenceArea y1={0.67} y2={1} fill="rgba(239, 68, 68, 0.1)" fillOpacity={1} />
-            {hasAveragedRisk && <Line
-              type="monotone"
-              dataKey="averagedNormalizedRisk"
-              stroke="#8b5cf6"
-              strokeWidth={3}
-              name="Averaged Health Risk"
-              connectNulls
-              dot={false}
-            />}
-            {hasNormalizedWaist && <Line
+            {riskView === 'contributions' && contributionSeries.map((series) => (
+              <Area
+                key={series.dataKey}
+                type="linear"
+                dataKey={series.dataKey}
+                name={series.name}
+                stackId="risk-contributions"
+                stroke={series.color}
+                strokeWidth={1}
+                strokeOpacity={0.6}
+                fill={series.color}
+                fillOpacity={0.22}
+                connectNulls={false}
+                activeDot={false}
+                isAnimationActive={false}
+              />
+            ))}
+            {riskView === 'trends' && hasNormalizedWaist && <Line
               type="monotone" 
               dataKey="normalizedWaistHeight" 
               stroke="#ec4899" 
               strokeWidth={2} 
+              strokeOpacity={0.7}
+              strokeDasharray="6 3"
               name="Normalized Waist-to-Height"
               connectNulls
               dot={false}
             />}
-            {hasNormalizedBodyFat && <Line
+            {riskView === 'trends' && hasNormalizedBodyFat && <Line
               type="monotone" 
               dataKey="normalizedBodyFat" 
               stroke="#06b6d4" 
               strokeWidth={2} 
+              strokeOpacity={0.7}
               strokeDasharray="5 4"
               name="Normalized Body Fat %"
               connectNulls
               dot={false}
+            />}
+            {riskView === 'trends' && hasNormalizedVisceralFat && <Line
+              type="linear"
+              dataKey="normalizedVisceralFat"
+              stroke="#f97316"
+              strokeWidth={2}
+              strokeOpacity={0.7}
+              strokeDasharray="3 3"
+              name="Normalized Visceral Fat"
+              connectNulls={false}
+              dot={{ r: 3 }}
+            />}
+            {hasAveragedRisk && <Line
+              type={riskView === 'contributions' ? 'linear' : 'monotone'}
+              dataKey={riskView === 'contributions' ? 'contributionTotal' : 'averagedNormalizedRisk'}
+              stroke="#7c3aed"
+              strokeWidth={4.5}
+              name="Health risk indicator (average)"
+              connectNulls={false}
+              dot={{ r: 3, fill: '#fff', strokeWidth: 2 }}
+              activeDot={{ r: 7, strokeWidth: 2 }}
+              isAnimationActive={riskView === 'trends'}
             />}
           </ComposedChart>
         </ResponsiveContainer>

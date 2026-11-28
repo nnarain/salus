@@ -16,6 +16,7 @@ import ZoneMilestoneCard from '@/components/ZoneMilestoneCard';
 import WaistHeightInfoModal from '@/components/WaistHeightInfoModal';
 import BodyFatInfoModal from '@/components/BodyFatInfoModal';
 import HealthMetricsChart from '@/components/HealthMetricsChart';
+import VisceralFatChart from '@/components/VisceralFatChart';
 import WeeklyActivityChart from '@/components/WeeklyActivityChart';
 import WeeklyStressChart from '@/components/WeeklyStressChart';
 import SleepDurationChart from '@/components/SleepDurationChart';
@@ -33,9 +34,11 @@ import {
   getCalorieBalanceTone,
   getSevenDayCalorieSummary,
   getThirtyDayWeightTrend,
+  getVisceralFatScaleColor,
   getWeightTrendTone,
 } from '@/lib/dashboardMetrics';
-import { calculateHealthRiskIndicator } from '@/lib/healthRisk';
+import { getVisceralFatScaleRatio } from '@/lib/healthRisk';
+import { getRiskJourney } from '@/lib/riskJourney';
 import { DEFAULT_LOGGING_GAP_DAYS } from '@/lib/insights';
 import { isValidChartRange } from '@/lib/chartRange';
 
@@ -115,6 +118,7 @@ export default function Home() {
     .filter((entry) => entry.metric_type === 'visceral_fat_level' && Number.isFinite(entry.value) && entry.value >= 0)
     .sort((first, second) => second.date.localeCompare(first.date)
       || (second.created_at ?? '').localeCompare(first.created_at ?? ''))[0];
+  const visceralFatScaleRatio = getVisceralFatScaleRatio(latestVisceralFat);
   const proteinTargetGrams = latestWeightEntry && (profile?.age === undefined || profile.age >= 18)
     ? estimateProteinTargetGrams(latestWeightEntry.unit === 'lbs'
       ? poundsToKilograms(latestWeightEntry.value)
@@ -127,10 +131,7 @@ export default function Home() {
   const thirtyDayWeightTrend = hasSampleWeightTrend
     ? createSampleThirtyDayWeightTrend()
     : actualThirtyDayWeightTrend;
-  const currentHealthRisk = calculateHealthRiskIndicator(
-    bodyFatPercentage ?? undefined,
-    waistHeightRatio ?? undefined,
-  );
+  const currentHealthRisk = useMemo(() => getRiskJourney(biometrics, profile)?.score ?? null, [biometrics, profile]);
   const hasWeightRecord = biometrics.some((entry) => entry.metric_type === 'weight');
   const missingCalorieInputs = [
     profile?.age === undefined ? 'age' : profile.age < 18 ? 'adult age' : null,
@@ -414,11 +415,16 @@ export default function Home() {
             value={latestVisceralFat ? latestVisceralFat.value.toLocaleString() : 'N/A'}
             unit={latestVisceralFat ? 'level' : undefined}
             description={latestVisceralFat
-              ? `Latest measurement · ${latestVisceralFat.scale_min != null && latestVisceralFat.scale_max != null
-                ? `Device range ${latestVisceralFat.scale_min} to ${latestVisceralFat.scale_max}`
-                : 'Device range not recorded'}`
+              ? `Latest measurement · ${visceralFatScaleRatio !== null
+                ? `Device range ${latestVisceralFat.scale_min} to ${latestVisceralFat.scale_max} · ${Math.round(visceralFatScaleRatio * 100)}% of range`
+                : latestVisceralFat.scale_min != null || latestVisceralFat.scale_max != null
+                  ? 'Device range invalid'
+                  : 'Device range not recorded'}`
               : 'Add a visceral fat measurement'}
             loading={loading}
+            style={visceralFatScaleRatio !== null
+              ? { borderColor: getVisceralFatScaleColor(visceralFatScaleRatio) }
+              : undefined}
           />
           <StatCard
             title="Waist to Height Ratio"
@@ -811,6 +817,14 @@ export default function Home() {
               rangeYears={activeChartRangeYears}
               weightDisplayUnit={weightDisplayUnit}
             />
+            <div className="mt-6">
+              <VisceralFatChart
+                biometrics={biometrics}
+                rangeYears={activeChartRangeYears}
+                loading={loading}
+                error={journeyError}
+              />
+            </div>
             <div className="mt-6">
               <NutritionChart
                 entries={nutritionEntries}
